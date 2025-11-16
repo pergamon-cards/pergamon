@@ -65,7 +65,7 @@ fn rune_object_to_embed(obj: rune::runtime::Object) -> CreateEmbed {
 impl EventHandler for State {
     async fn message(&self, ctx: Context, msg: Message) {
         // build here for debug only, shouldn't be here
-        let re = Regex::new(r"\[\[(?<title_query>.*)\]\]").unwrap();
+        let re = Regex::new(r"\[\[(?<title_query>.*)\]\]").expect("Error building regex");
         let Some(q) = re.captures(&msg.content) else {
             return;
         };
@@ -74,13 +74,11 @@ impl EventHandler for State {
         let pattern = format!("{tq}%");
         println!("{pattern}");
 
-        let entry = sqlx::query(
-            "SELECT game, title, card FROM cards WHERE title LIKE ? ORDER BY rowid LIMIT 1",
-        )
-        .bind(pattern)
-        .fetch_optional(&self.database)
-        .await
-        .unwrap();
+        let entry = sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE ? ORDER BY rowid LIMIT 1")
+            .bind(pattern)
+            .fetch_optional(&self.database)
+            .await
+            .unwrap();
         
         if let Some(row) = entry {
             // get json data as string (for rune reasons)
@@ -90,7 +88,13 @@ impl EventHandler for State {
             let vm = Vm::new(self.runtime.clone(), self.unit.clone());
             
             // create execution struct, i.e. rune function call
-            let execution = vm.try_clone().unwrap().send_execute(["netrunner_embed"], (card,)).unwrap();
+            let execution = match vm.try_clone().unwrap().send_execute(["netrunner_embed"], (card,)) {
+                Ok(exe) => exe,
+                Err(e) => {
+                    println!("Error creating execution: {e}");
+                    return
+                }
+            };
             
             // run in separate thread
             let _ = tokio::spawn(async move {
@@ -104,18 +108,36 @@ impl EventHandler for State {
                 };
                 
                 // convert rune value into module struct
-                let output: rune::runtime::Object = rune::from_value(output).unwrap();
+                let output: rune::runtime::Object = match rune::from_value(output) {
+                    Ok(out) => out,
+                    Err(e) => {
+                        println!("Error converting from rune value to rune object: {e}");
+                        return
+                    }
+                };
                 
                 // convert module struct into serenity discord embed
                 let embed = rune_object_to_embed(output);
                 
                 // create discord message with embed and send
                 let builder = CreateMessage::new().embed(embed);
-                let _msg = msg.channel_id.send_message(&ctx.http, builder).await.unwrap();
+                let _msg = match msg.channel_id.send_message(&ctx.http, builder).await {
+                    Ok(msg) => msg,
+                    Err(e) => {
+                        println!("Error sending message to Discord: {e}");
+                        return
+                    }
+                };
             });
         } else {
             let builder = CreateMessage::new().content(&format!("{tq} not found"));
-            let _msg = msg.channel_id.send_message(&ctx.http, builder).await.unwrap();
+            let _msg = match msg.channel_id.send_message(&ctx.http, builder).await {
+                Ok(msg) => msg,
+                Err(e) => {
+                    println!("Error sending message to Discord: {e}");
+                    return
+                }
+            };
         }
     }
 
@@ -137,7 +159,7 @@ async fn main() {
                 .create_if_missing(false),
         )
         .await
-        .expect("Couldn't connect to database");
+        .expect("Unable to connect to database");
     
     let (runtime, unit) = create_rune_runtime().unwrap();
 
@@ -149,7 +171,7 @@ async fn main() {
     let mut client = Client::builder(&token, intents)
         .event_handler(state)
         .await
-        .expect("Err creating client");
+        .expect("Unable to create client");
 
     if let Err(why) = client.start().await {
         println!("Client error: {why:?}");
