@@ -71,12 +71,14 @@ impl EventHandler for State {
         };
 
         let tq = &q["title_query"];
+        let pattern = format!("{tq}%");
+        println!("{pattern}");
 
         let entry = sqlx::query(
-            "SELECT game, title, card FROM cards WHERE title = ? ORDER BY rowid LIMIT 1",
+            "SELECT game, title, card FROM cards WHERE title LIKE ? ORDER BY rowid LIMIT 1",
         )
-        .bind(tq)
-        .fetch_optional(&self.database) // < Just one data will be sent to entry
+        .bind(pattern)
+        .fetch_optional(&self.database)
         .await
         .unwrap();
         
