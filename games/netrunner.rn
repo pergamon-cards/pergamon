@@ -1,0 +1,64 @@
+pub async fn netrunner_embed(c) {
+    // json string to json value
+    let card = json::from_string(c).unwrap();
+
+    let footer_string = String::from("");
+    footer_string.push_str(faction_code(card.get("faction_code").unwrap()));
+    footer_string.push_str(" \u{2022} ");
+    footer_string.push_str(card.get("pack_code").unwrap());
+    footer_string.push_str(" #");
+    footer_string.push_str(card.get("position").unwrap().to_string());
+
+    let url_string = String::from("");
+    url_string.push_str("https://netrunnerdb.com/en/card/");
+    url_string.push_str(card.get("code").unwrap());
+
+    let img_url_string = String::from("");
+    img_url_string.push_str("https://card-images.netrunnerdb.com/v2/large/");
+    img_url_string.push_str(card.get("code").unwrap());
+    img_url_string.push_str(".jpg");
+    
+    let field_header_string = String::from("");
+    field_header_string.push_str(card.get("type_code").unwrap());
+    field_header_string.push_str(": ");
+    field_header_string.push_str(card.get("keywords").unwrap());
+    field_header_string.push_str(" \u{2022} Cost: ");
+    field_header_string.push_str(card.get("cost").unwrap().to_string());
+
+    match card.get("trash_cost") {
+        Some(tc) => {
+            field_header_string.push_str(" \u{2022} Trash: ");
+            field_header_string.push_str(tc.to_string());
+        }
+        None => ()
+    }
+
+    field_header_string.push_str(" \u{2022} Influence: ");
+    field_header_string.push_str(card.get("faction_cost").unwrap().to_string());
+
+    let embed = DiscordEmbed {
+        title: card.get("title").unwrap(),
+        url: Some(url_string),
+        thumbnail: Some(img_url_string),
+        field: Some((
+            field_header_string,
+            card.get("text").unwrap(),
+        )),
+        footer: Some(footer_string),
+    };
+    
+    embed
+}
+
+fn faction_code(code) {
+    match code {
+        "anarch" => "Anarch",
+        "criminal" => "Criminal",
+        "shaper" => "Shaper",
+        "nbn" => "NBN",
+        "jinteki" => "Jinteki",
+        "weyland-consortium" => "Weyland Consortium",
+        "hass-biodroid" => "Haas-Biodroid",
+        s => s,
+    }
+}
