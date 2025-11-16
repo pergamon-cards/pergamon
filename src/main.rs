@@ -1,6 +1,5 @@
 mod games;
 
-use std::collections::HashMap;
 use std::env;
 
 use regex::Regex;
@@ -11,13 +10,12 @@ use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
 
-use tokio::fs::File;
-use tokio::io::AsyncReadExt;
+use sqlx::Row;
 
 use crate::games::netrunner;
 
 struct State {
-	data_by_title: HashMap<String, serde_json::Value>,
+	database: sqlx::SqlitePool,
 }
 
 #[async_trait]
@@ -29,9 +27,16 @@ impl EventHandler for State {
 		
 		let tq = &q["title_query"];
 		
+		let entry = sqlx::query("SELECT game, title, card FROM cards WHERE title = ? ORDER BY rowid LIMIT 1")
+			.bind(tq)
+			.fetch_optional(&self.database) // < Just one data will be sent to entry
+			.await
+			.unwrap();
+		
 		let builder = 
-			if let Some(card) = self.data_by_title.get(tq) {
-				netrunner::create_embed(card)
+			if let Some(row) = entry {
+				let card = row.get("card");
+				netrunner::create_embed(&card)
 			} else {
 				CreateMessage::new().content(&format!("{tq} not found"))
 			};
@@ -53,18 +58,17 @@ async fn main() {
 	// Configure the client with your Discord bot token in the environment.
 	let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
 	
-	// Load test data file
-	let mut file = File::open("core.json").await.expect("open test data file");
-	let mut file_contents = vec![];
-	file.read_to_end(&mut file_contents).await.expect("read test data file");
-	let data: Vec<serde_json::Value> = serde_json::from_slice(&file_contents).expect("parse data file");
+	let database = sqlx::sqlite::SqlitePoolOptions::new()
+		.max_connections(5)
+		.connect_with(
+			sqlx::sqlite::SqliteConnectOptions::new()
+				.filename("data/cards.sqlite")
+				.create_if_missing(false),
+		)
+		.await
+		.expect("Couldn't connect to database");
 	
-	let data_by_title = data
-		.iter()
-		.map(|c| (c["title"].as_str().unwrap().to_owned(), c.clone()))
-		.collect::<HashMap<_,_>>();
-	
-	let state = State { data_by_title };
+	let state = State { database };
 	
 	let intents = GatewayIntents::GUILD_MESSAGES
 		| GatewayIntents::DIRECT_MESSAGES
