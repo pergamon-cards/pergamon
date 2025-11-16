@@ -6,7 +6,7 @@ use regex::Regex;
 use rune::alloc::prelude::TryClone;
 use rune::runtime::{Vm, VmResult};
 use rune::termcolor::{ColorChoice, StandardStream};
-use rune::{Any, ContextError, Diagnostics, Module, Source, Sources};
+use rune::{Diagnostics, Source, Sources};
 
 use serenity::async_trait;
 use serenity::builder::{CreateEmbed, CreateEmbedFooter, CreateMessage};
@@ -22,39 +22,43 @@ struct State {
     unit: Arc<rune::Unit>,
 }
 
-#[derive(Clone, Debug, Default, Any)]
-#[rune(constructor)]
-struct DiscordEmbed {
-    #[rune(get, set)]
-    title: String,
+fn rune_object_to_embed(obj: rune::runtime::Object) -> CreateEmbed {
+    let mut ret = CreateEmbed::new();
     
-    #[rune(get, set)]
-    url: Option<String>,
+    ret = match obj.get("title") {
+        Some(title) => ret.title(title.clone().into_string().unwrap()),
+        None => ret,
+    };
     
-    #[rune(get, set)]
-    thumbnail: Option<String>,
+    ret = match obj.get("url") {
+        Some(url) => ret.url(url.clone().into_string().unwrap()),
+        None => ret,
+    };
     
-    #[rune(get, set)]
-    field: Option<(String, String)>,
+    ret = match obj.get("thumbnail") {
+        Some(thumbnail) => ret.thumbnail(thumbnail.clone().into_string().unwrap()),
+        None => ret,
+    };
     
-    #[rune(get, set)]
-    footer: Option<String>,
-}
-
-impl From<DiscordEmbed> for CreateEmbed {
-    fn from(d: DiscordEmbed) -> Self {
-        let ret = CreateEmbed::new().title(d.title);
-        
-        let ret = d.url.map_or(ret.clone(), |url_string| ret.url(url_string));
-        let ret = d.thumbnail.map_or(ret.clone(), |thumbnail| ret.thumbnail(thumbnail));
-        let ret = d.field.map_or(ret.clone(), |(header, body)| ret.field(header, body, false));
-        let ret = d.footer.map_or(ret.clone(), |footer_string| {
-            let footer = CreateEmbedFooter::new(footer_string);
+    ret = match obj.get("field") {
+        Some(field) => {
+            let field_rt = field.clone().into_tuple().unwrap();
+            let header = field_rt[0].clone().into_string().unwrap();
+            let body = field_rt[1].clone().into_string().unwrap();
+            ret.field(header, body, false)
+        }
+        None => ret,
+    };
+    
+    ret = match obj.get("footer") {
+        Some(footer) => {
+            let footer = CreateEmbedFooter::new(footer.clone().into_string().unwrap());
             ret.footer(footer)
-        });
-
-        ret
-    }
+        }
+        None => ret,
+    };
+    
+    ret
 }
 
 #[async_trait]
@@ -98,10 +102,10 @@ impl EventHandler for State {
                 };
                 
                 // convert rune value into module struct
-                let output: DiscordEmbed = rune::from_value(output).unwrap();
+                let output: rune::runtime::Object = rune::from_value(output).unwrap();
                 
                 // convert module struct into serenity discord embed
-                let embed = output.into();
+                let embed = rune_object_to_embed(output);
                 
                 // create discord message with embed and send
                 let builder = CreateMessage::new().embed(embed);
@@ -150,17 +154,8 @@ async fn main() {
     }
 }
 
-pub fn module() -> Result<Module, ContextError> {
-    let mut module = Module::new();
-    module.ty::<DiscordEmbed>()?;
-    Ok(module)
-}
-
 fn create_rune_runtime() -> rune::support::Result<(Arc<rune::runtime::RuntimeContext>, Arc<rune::Unit>)> {
-    let m = module()?;
-
     let mut context = rune::Context::with_default_modules()?;
-    context.install(m)?;
     context.install(rune_modules::json::module(true)?)?;
     let runtime = Arc::new(context.runtime()?);
     

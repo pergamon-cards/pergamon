@@ -3,3 +3,4 @@ data/*
 data/netrunner/*
 !data/netrunner/*.py
 target/
+*.DS_Store
