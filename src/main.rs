@@ -1,5 +1,7 @@
+use std::collections::HashSet;
 use std::env;
 use std::sync::Arc;
+use std::time::Duration;
 
 use regex::Regex;
 
@@ -8,8 +10,12 @@ use rune::runtime::{Vm, VmResult};
 use rune::termcolor::{ColorChoice, StandardStream};
 use rune::{Diagnostics, Source, Sources};
 
+use serenity::all::{ComponentInteractionDataKind, CreateInteractionResponse, CreateInteractionResponseMessage};
 use serenity::async_trait;
-use serenity::builder::{CreateEmbed, CreateEmbedFooter, CreateMessage};
+use serenity::builder::{CreateEmbed, CreateEmbedFooter, CreateMessage,
+    CreateSelectMenu,
+    CreateSelectMenuKind,
+    CreateSelectMenuOption,};
 use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
@@ -72,13 +78,94 @@ impl EventHandler for State {
 
         let tq = &q["title_query"];
         let pattern = format!("{tq}%");
-        println!("{pattern}");
 
-        let entry = sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE ? ORDER BY rowid LIMIT 1")
+        let mut results = match sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE ? ORDER BY rowid LIMIT 10")
             .bind(pattern)
-            .fetch_optional(&self.database)
-            .await
-            .unwrap();
+            .fetch_all(&self.database)
+            .await {
+                Ok(res) => res,
+                Err(e) => {
+                    println!("Error querying sqlite: {e}");
+                    return
+                }
+            };
+            
+        let entry = if results.len() == 1 {
+            Some(results.remove(0))
+        } else if results.len() == 0 {
+            None
+        } else {
+            let menu_options = results
+                .iter()
+                .map(|r| r.get::<String,_>("title"))
+                .collect::<HashSet<_>>()
+                .iter()
+                .map(|t| CreateSelectMenuOption::new(t, t))
+                .collect();
+            let m = msg
+                .channel_id
+                .send_message(
+                    &ctx,
+                    CreateMessage::new().content("Please select the card you're looking for").select_menu(
+                        CreateSelectMenu::new("card_select", CreateSelectMenuKind::String {
+                            options: menu_options,
+                        })
+                        .custom_id("card_select")
+                        .placeholder("No card selected"),
+                    ),
+                )
+                .await
+                .unwrap();
+                
+            let interaction = match m
+                .await_component_interaction(&ctx.shard)
+                .timeout(Duration::from_secs(60 * 3))
+                .await
+            {
+                Some(x) => x,
+                None => {
+                    m.reply(&ctx, "Timed out").await.unwrap();
+                    return;
+                },
+            };
+            
+            let selected_card = match &interaction.data.kind {
+                ComponentInteractionDataKind::StringSelect {
+                    values,
+                } => &values[0],
+                _ => panic!("unexpected interaction data kind"),
+            };
+            
+            interaction
+                .create_response(
+                    &ctx,
+                    CreateInteractionResponse::UpdateMessage(
+                        CreateInteractionResponseMessage::default()
+                            .content(format!("You chose: **{selected_card}**")),
+                    ),
+                )
+                .await
+                .unwrap();
+            
+            println!("selected option: {selected_card}");
+            
+            m.delete(&ctx).await.unwrap();
+            
+            let entry = match sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE ? ORDER BY rowid LIMIT 1")
+                .bind(selected_card)
+                .fetch_one(&self.database)
+                .await {
+                    Ok(res) => res,
+                    Err(e) => {
+                        println!("Error querying sqlite: {e}");
+                        return
+                    }
+                };
+
+            // temp
+            // results.first()
+            Some(entry)
+        };
         
         if let Some(row) = entry {
             // get json data as string (for rune reasons)
