@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::env;
-use std::io::prelude::*;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -176,7 +175,7 @@ impl EventHandler for State {
             let vm = Vm::new(self.runtime.clone(), self.unit.clone());
             
             // create execution struct, i.e. rune function call
-            let execution = match vm.try_clone().unwrap().send_execute([format!("{game}_embed").as_str()], (card,)) {
+            let execution = match vm.try_clone().unwrap().send_execute([&game, "embed"], (card,)) {
                 Ok(exe) => exe,
                 Err(e) => {
                     println!("Error creating execution: {e}");

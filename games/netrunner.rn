@@ -1,79 +1,95 @@
-pub async fn netrunner_embed(c) {
-    // json string to json value
-    let card = json::from_string(c).unwrap();
-    
-    let embed = #{};
-    
-    embed["title"] = card.get("title").unwrap();
-    
-    let url_string = String::from("");
-    url_string.push_str("https://netrunnerdb.com/en/card/");
-    url_string.push_str(card.get("code").unwrap());
-    embed["url"] = url_string;
-    
-    let img_url_string = String::from("");
-    img_url_string.push_str("https://card-images.netrunnerdb.com/v2/large/");
-    img_url_string.push_str(card.get("code").unwrap());
-    img_url_string.push_str(".jpg");
-    embed["thumbnail"] = img_url_string;
-    
-    let type_code = card.get("type_code").unwrap();
-    let field_header_string = String::from("");
-    if type_code == "agenda" {
-        field_header_string = agenda_header(card)
-    } else {
-        field_header_string.push_str(card.get("type_code").unwrap());
-        field_header_string.push_str(": ");
-        field_header_string.push_str(card.get("keywords").unwrap());
-        field_header_string.push_str(" \u{2022} Cost: ");
-        field_header_string.push_str(card.get("cost").unwrap().to_string());
+pub mod netrunner {
+    pub async fn embed(c) {
+        // json string to json value
+        let card = json::from_string(c).unwrap();
         
-        match card.get("trash_cost") {
-            Some(tc) => {
-                field_header_string.push_str(" \u{2022} Trash: ");
-                field_header_string.push_str(tc.to_string());
+        let embed = #{};
+        
+        embed["title"] = card["title"];
+        
+        let url_string = String::from("");
+        url_string.push_str("https://netrunnerdb.com/en/card/");
+        url_string.push_str(card["code"]);
+        embed["url"] = url_string;
+        
+        let img_url_string = String::from("");
+        img_url_string.push_str("https://card-images.netrunnerdb.com/v2/large/");
+        img_url_string.push_str(card["code"]);
+        img_url_string.push_str(".jpg");
+        embed["thumbnail"] = img_url_string;
+        
+        let type_code = card["type_code"];
+        let field_header_string = String::from("");
+        if type_code == "agenda" {
+            field_header_string = agenda_header(card)
+        } else {
+            field_header_string.push_str(type_code);
+            
+            match card.get("keywords") {
+                Some(kw) => {
+                    field_header_string.push_str(": ");
+                    field_header_string.push_str(card["keywords"]);
+                }
+                None => (),
             }
-            None => ()
+            
+            field_header_string.push_str(" \u{2022} Cost: ");
+            field_header_string.push_str(card["cost"].to_string());
+            
+            match card.get("trash_cost") {
+                Some(tc) => {
+                    field_header_string.push_str(" \u{2022} Trash: ");
+                    field_header_string.push_str(tc.to_string());
+                }
+                None => ()
+            }
+            
+            field_header_string.push_str(" \u{2022} Influence: ");
+            field_header_string.push_str(card["faction_cost"].to_string());
+        }
+        embed["field"] = (field_header_string, card["text"]);
+    
+        let footer_string = String::from("");
+        footer_string.push_str(faction_code(card["faction_code"]));
+        footer_string.push_str(" \u{2022} ");
+        footer_string.push_str(card["pack_code"]);
+        footer_string.push_str(" #");
+        footer_string.push_str(card["position"].to_string());
+        embed["footer"] = footer_string;
+        
+        embed
+    }
+    
+    fn agenda_header(card) {
+        let field_header_string = String::from("");
+        field_header_string.push_str(card["type_code"]);
+        
+        match card.get("keywords") {
+            Some(kw) => {
+                field_header_string.push_str(": ");
+                field_header_string.push_str(card["keywords"]);
+            }
+            None => (),
         }
         
-        field_header_string.push_str(" \u{2022} Influence: ");
-        field_header_string.push_str(card.get("faction_cost").unwrap().to_string());
+        field_header_string.push_str(" \u{2022} ");
+        field_header_string.push_str(card["advancement_cost"].to_string());
+        field_header_string.push_str("/");
+        field_header_string.push_str(card["agenda_points"].to_string());
+        
+        field_header_string
     }
-    embed["field"] = (field_header_string, card.get("text").unwrap());
-
-    let footer_string = String::from("");
-    footer_string.push_str(faction_code(card.get("faction_code").unwrap()));
-    footer_string.push_str(" \u{2022} ");
-    footer_string.push_str(card.get("pack_code").unwrap());
-    footer_string.push_str(" #");
-    footer_string.push_str(card.get("position").unwrap().to_string());
-    embed["footer"] = footer_string;
     
-    embed
-}
-
-fn agenda_header(card) {
-    let field_header_string = String::from("");
-    field_header_string.push_str(card.get("type_code").unwrap());
-    field_header_string.push_str(": ");
-    field_header_string.push_str(card.get("keywords").unwrap());
-    field_header_string.push_str(" \u{2022} ");
-    field_header_string.push_str(card.get("advancement_cost").unwrap().to_string());
-    field_header_string.push_str("/");
-    field_header_string.push_str(card.get("agenda_points").unwrap().to_string());
-    
-    field_header_string
-}
-
-fn faction_code(code) {
-    match code {
-        "anarch" => "Anarch",
-        "criminal" => "Criminal",
-        "shaper" => "Shaper",
-        "nbn" => "NBN",
-        "jinteki" => "Jinteki",
-        "weyland-consortium" => "Weyland Consortium",
-        "hass-biodroid" => "Haas-Biodroid",
-        s => s,
+    fn faction_code(code) {
+        match code {
+            "anarch" => "Anarch",
+            "criminal" => "Criminal",
+            "shaper" => "Shaper",
+            "nbn" => "NBN",
+            "jinteki" => "Jinteki",
+            "weyland-consortium" => "Weyland Consortium",
+            "hass-biodroid" => "Haas-Biodroid",
+            s => s,
+        }
     }
 }
