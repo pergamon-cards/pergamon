@@ -12,9 +12,8 @@ use rune::runtime::{Vm, VmResult};
 use rune::termcolor::{ColorChoice, StandardStream};
 use rune::{Diagnostics, Source, Sources};
 
-use serenity::all::{ComponentInteractionDataKind, CreateInteractionResponse, CreateInteractionResponseMessage};
 use serenity::async_trait;
-use serenity::builder::{CreateEmbed, CreateEmbedFooter, CreateMessage, CreateSelectMenu, CreateSelectMenuKind, CreateSelectMenuOption};
+use serenity::builder::{CreateButton, CreateEmbed, CreateEmbedFooter, CreateMessage};
 use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
@@ -95,26 +94,18 @@ impl EventHandler for State {
         } else if results.len() == 0 {
             None
         } else {
-            let menu_options = results
+            let card_selection_buttons = results
                 .iter()
                 .map(|r| r.get::<String, _>("title"))
                 .collect::<HashSet<_>>()
                 .iter()
-                .map(|t| CreateSelectMenuOption::new(t, t))
-                .collect();
+                .map(|t| CreateButton::new(t).label(t))
+                .collect::<Vec<_>>();
 
-            let m = match msg
-                .channel_id
-                .send_message(
-                    &ctx,
-                    CreateMessage::new().content("Please select the card you're looking for").select_menu(
-                        CreateSelectMenu::new("card_select", CreateSelectMenuKind::String { options: menu_options })
-                            .custom_id("card_select")
-                            .placeholder("No card selected"),
-                    ),
-                )
-                .await
-            {
+            let card_selection_msg_init = CreateMessage::new().content("Please select the card you're looking for");
+            let card_selection_msg = card_selection_buttons.into_iter().fold(card_selection_msg_init, |acc, b| acc.button(b));
+
+            let m = match msg.channel_id.send_message(&ctx, card_selection_msg).await {
                 Ok(res) => res,
                 Err(e) => {
                     println!("Error sending card selection message: {e}");
@@ -130,29 +121,7 @@ impl EventHandler for State {
                 }
             };
 
-            let selected_card = match &interaction.data.kind {
-                ComponentInteractionDataKind::StringSelect { values } => &values[0],
-                _ => {
-                    println!("unexpected interaction data kind");
-                    return;
-                }
-            };
-
-            match interaction
-                .create_response(
-                    &ctx,
-                    CreateInteractionResponse::UpdateMessage(
-                        CreateInteractionResponseMessage::default().content(format!("You chose: **{selected_card}**")),
-                    ),
-                )
-                .await
-            {
-                Ok(res) => res,
-                Err(e) => {
-                    println!("Error creating interaction response to card selection: {e}");
-                    return;
-                }
-            };
+            let selected_card = &interaction.data.custom_id;
 
             m.delete(&ctx).await.unwrap();
 
