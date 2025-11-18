@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::env;
+use std::io::prelude::*;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -271,8 +272,16 @@ fn create_rune_runtime() -> rune::support::Result<(Arc<rune::runtime::RuntimeCon
     let runtime = Arc::new(context.runtime()?);
     
     let mut sources = Sources::new();
-    sources.insert(Source::from_path("games/agricola.rn").unwrap()).unwrap();
-    sources.insert(Source::from_path("games/netrunner.rn").unwrap()).unwrap();
+    
+    std::fs::read_dir("games").expect("Directory doesn't exist")
+        .for_each(|e| {
+            let entry = e.unwrap();
+            let path = entry.path();
+            if path.extension().unwrap() == "rn" {
+                sources.insert(Source::from_path(&path).unwrap()).unwrap();
+                println!("Loaded game script at {}", path.display());
+            }
+        });
     
     let mut diagnostics = Diagnostics::new();
     
