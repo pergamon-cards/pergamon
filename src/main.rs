@@ -94,36 +94,46 @@ impl EventHandler for State {
         } else if results.len() == 0 {
             None
         } else {
-            let card_selection_buttons = results
+            let unique_card_titles = results
                 .iter()
                 .map(|r| r.get::<String, _>("title"))
-                .collect::<HashSet<_>>()
-                .iter()
-                .map(|t| CreateButton::new(t).label(t))
-                .collect::<Vec<_>>();
-
-            let card_selection_msg_init = CreateMessage::new().content("Please select the card you're looking for");
-            let card_selection_msg = card_selection_buttons.into_iter().fold(card_selection_msg_init, |acc, b| acc.button(b));
-
-            let m = match msg.channel_id.send_message(&ctx, card_selection_msg).await {
-                Ok(res) => res,
-                Err(e) => {
-                    println!("Error sending card selection message: {e}");
-                    return;
-                }
-            };
-
-            let interaction = match m.await_component_interaction(&ctx.shard).timeout(Duration::from_secs(60 * 3)).await {
-                Some(x) => x,
-                None => {
-                    m.reply(&ctx, "Timed out").await.unwrap();
-                    return;
-                }
-            };
-
-            let selected_card = &interaction.data.custom_id;
-
-            m.delete(&ctx).await.unwrap();
+                .collect::<HashSet<_>>();
+                
+            let selected_card = 
+                if unique_card_titles.len() == 1 {
+                    results[0].get::<String, _>("title")
+                } else {
+                    let card_selection_buttons = unique_card_titles
+                        .iter()
+                        .map(|t| CreateButton::new(t).label(t))
+                        .collect::<Vec<_>>();
+                    
+                    let card_selection_msg_init = CreateMessage::new().content("Please select the card you're looking for");
+                    let card_selection_msg = card_selection_buttons.into_iter().fold(card_selection_msg_init, |acc, b| acc.button(b));
+                    
+                    let m = match msg.channel_id.send_message(&ctx, card_selection_msg).await {
+                        Ok(res) => res,
+                        Err(e) => {
+                            println!("Error sending card selection message: {e}");
+                            return;
+                        }
+                    };
+                    
+                    let interaction = match m
+                        .await_component_interaction(&ctx.shard).timeout(Duration::from_secs(60 * 3))
+                        .await
+                    {
+                        Some(x) => x,
+                        None => {
+                            m.reply(&ctx, "Timed out").await.unwrap();
+                            return;
+                        }
+                    };
+                    
+                    m.delete(&ctx).await.unwrap();
+                    
+                    interaction.data.custom_id
+                };
 
             let entry = match sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE ? ORDER BY rowid LIMIT 1")
                 .bind(selected_card)
