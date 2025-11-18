@@ -22,8 +22,12 @@ pub mod netrunner {
         let field_header_string = String::from("");
         if type_code == "agenda" {
             field_header_string = agenda_header(card)
+        } else if type_code == "ice" {
+            field_header_string = ice_header(card)
+        } else if type_code == "identity" {
+            field_header_string = identity_header(card)
         } else {
-            field_header_string.push_str(type_code);
+            field_header_string.push_str(type_code(type_code));
             
             match card.get("keywords") {
                 Some(kw) => {
@@ -45,14 +49,18 @@ pub mod netrunner {
             }
             
             field_header_string.push_str(" \u{2022} Influence: ");
-            field_header_string.push_str(card["faction_cost"].to_string());
+            
+            for _ in 0..card["faction_cost"] {
+                field_header_string.push_str("\u{25cf}");
+            }
+
         }
         embed["field"] = (field_header_string, card["text"]);
     
         let footer_string = String::from("");
         footer_string.push_str(faction_code(card["faction_code"]));
         footer_string.push_str(" \u{2022} ");
-        footer_string.push_str(card["pack_code"]);
+        footer_string.push_str(pack_code(card["pack_code"]));
         footer_string.push_str(" #");
         footer_string.push_str(card["position"].to_string());
         embed["footer"] = footer_string;
@@ -62,7 +70,7 @@ pub mod netrunner {
     
     fn agenda_header(card) {
         let field_header_string = String::from("");
-        field_header_string.push_str(card["type_code"]);
+        field_header_string.push_str(type_code(card["type_code"]));
         
         match card.get("keywords") {
             Some(kw) => {
@@ -80,6 +88,66 @@ pub mod netrunner {
         field_header_string
     }
     
+    fn ice_header(card) {
+        let field_header_string = String::from("");
+        field_header_string.push_str(type_code(card["type_code"]));
+        
+        match card.get("keywords") {
+            Some(kw) => {
+                field_header_string.push_str(": ");
+                field_header_string.push_str(card["keywords"]);
+            }
+            None => (),
+        }
+        
+        field_header_string.push_str(" \u{2022} Rez: ");
+        field_header_string.push_str(card["cost"].to_string());
+        
+        match card.get("trash_cost") {
+            Some(tc) => {
+                field_header_string.push_str(" \u{2022} Trash: ");
+                field_header_string.push_str(tc.to_string());
+            }
+            None => ()
+        }
+        
+        field_header_string.push_str(" \u{2022} Influence: ");
+        
+        for _ in 0..card["faction_cost"] {
+            field_header_string.push_str("\u{25cf}");
+        }
+        
+        field_header_string
+    }
+    
+    fn identity_header(card) {
+        let field_header_string = String::from("");
+        field_header_string.push_str(type_code(card["type_code"]));
+        
+        match card.get("keywords") {
+            Some(kw) => {
+                field_header_string.push_str(": ");
+                field_header_string.push_str(card["keywords"]);
+            }
+            None => (),
+        }
+        
+        field_header_string.push_str(" \u{2022} ");
+        field_header_string.push_str(card["minimum_deck_size"].to_string());
+        field_header_string.push_str("/");
+        field_header_string.push_str(card["influence_limit"].to_string());
+        
+        match card.get("base_link") {
+            Some(link) => {
+                field_header_string.push_str(" \u{2022} Link: ");
+                field_header_string.push_str(link.to_string());
+            }
+            None => ()
+        }
+        
+        field_header_string
+    }
+    
     fn faction_code(code) {
         match code {
             "anarch" => "Anarch",
@@ -92,4 +160,103 @@ pub mod netrunner {
             s => s,
         }
     }
+    
+    fn type_code(code) {
+        match code {
+            "resource" => "Resource",
+            "event" => "Event",
+            "upgrade" => "Upgrade",
+            "agenda" => "Agenda",
+            "program" => "Program",
+            "ice" => "Ice",
+            "identity" => "Identity",
+            "hardware" => "Hardware",
+            s => s,
+        }
+    }
+    
+    fn pack_code(code) {
+        match code {
+            "23s" => "Flashpoint (23 Seconds)",
+            "asis" => "Genesis (A Study in Static)",
+            "atr" => "Lunar (All That Remains)",
+            "baw" => "Red Sand (Blood and Water)",
+            "bb" => "SanSan (Breaker Bay)",
+            "bf" => "Mumbad (Business First)",
+            "bm" => "Flashpoint (Blood Money)",
+            "cac" => "Creation and Control",
+            "cc" => "SanSan (Chrome City)",
+            "cd" => "Red Sand (Crimson Dust)",
+            "ce" => "Genesis (Cyber Exodus)",
+            "core" => "Core Set",
+            "core2" => "Revised Core Set",
+            "cotc" => "Kitara (Council of the Crest)",
+            "dad" => "Data and Destiny",
+            "dag" => "Mumbad (Democracy and Dogma)",
+            "dc" => "Red Sand (Daedalus Complex)",
+            "df" => "Ashes (Downfall)",
+            "draft" => "Draft",
+            "dt" => "Spin (Double Time)",
+            "dtwn" => "Kitara (Down the White Nile)",
+            "eas" => "Red Sand (Earth's Scion)",
+            "elev" => "Elevation",
+            "es" => "Flashpoint (Escalation)",
+            "fal" => "Spin (Fear and Loathing)",
+            "fc" => "Lunar (First Contact)",
+            "fm" => "Red Sand (Free Mars)",
+            "fp" => "Genesis (Future Proof)",
+            "ftm" => "Mumbad (Fear the Masses)",
+            "hap" => "Honor and Profit",
+            "hs" => "Genesis (Humanity's Shadow)",
+            "in" => "Flashpoint (Intervention)",
+            "ka" => "Kitara (Kampala Ascendent)",
+            "kg" => "Mumbad (Kala Ghoda)",
+            "ml" => "Flashpoint (Martial Law)",
+            "mo" => "Magnum Opus",
+            "mor" => "Magnum Opus Reprint",
+            "ms" => "Borealis (Midnight Sun)",
+            "msbp" => "Borealis (Midnight Sun Booster Pack)",
+            "mt" => "Spin (Mala Tempora)",
+            "napd" => "NAPD Multiplayer",
+            "oac" => "Order and Chaos",
+            "oh" => "SanSan (Old Hollywood)",
+            "om" => "Spin (Opening Moves)",
+            "ph" => "Borealis (Parhelion)",
+            "qu" => "Flashpoint (Quorum)",
+            "rar" => "Reign and Reverie",
+            "rwr" => "Liberation (Rebellion Without Rehearsal)",
+            "sc19" => "System Core 2019",
+            "sg" => "System Gateway",
+            "si" => "Mumbad (Salsette Island)",
+            "sm" => "Salvaged Memories",
+            "so" => "Red Sand (Station One)",
+            "ss" => "Kitara (Sovereign Sight)",
+            "st" => "Spin (Second Thoughts)",
+            "su21" => "System Update 2021",
+            "ta" => "Genesis (Trace Amount)",
+            "tai" => "Liberation (The Automata Initiative)",
+            "tc" => "Spin (True Colors)",
+            "td" => "Terminal Directive Cards",
+            "tdatd" => "Kitara (The Devil and the Dragon)",
+            "tdc" => "Terminal Directive Campaign",
+            "tlm" => "Mumbad (The Liberated Mind)",
+            "ts" => "Lunar (The Source)",
+            "tsb" => "Lunar (The Spaces Between)",
+            "uao" => "Lunar (Up and Over)",
+            "uot" => "SanSan (The Universe of Tomorrow)",
+            "up" => "Lunar (Upstalk)",
+            "ur" => "Ashes (Uprising)",
+            "urbp" => "Ashes (Uprising Booster Pack)",
+            "uw" => "SanSan (The Underway)",
+            "val" => "SanSan (The Valley)",
+            "win" => "Kitara (Whispers in Nalubaale)",
+            "wla" => "Genesis (What Lies Ahead)",
+            s => s,
+        }
+    }
 }
+
+
+    
+
+
