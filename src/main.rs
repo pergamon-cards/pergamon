@@ -168,14 +168,14 @@ impl EventHandler for State {
         };
         
         if let Some(row) = entry {
-            // get json data as string (for rune reasons)
-            let card = row.get::<String,_>("card");
+            let card = row.get::<String,_>("card"); // get json data as string (for rune reasons)
+            let game = row.get::<String,_>("game");
             
             // build rune vm
             let vm = Vm::new(self.runtime.clone(), self.unit.clone());
             
             // create execution struct, i.e. rune function call
-            let execution = match vm.try_clone().unwrap().send_execute(["netrunner_embed"], (card,)) {
+            let execution = match vm.try_clone().unwrap().send_execute([format!("{game}_embed").as_str()], (card,)) {
                 Ok(exe) => exe,
                 Err(e) => {
                     println!("Error creating execution: {e}");
@@ -271,6 +271,7 @@ fn create_rune_runtime() -> rune::support::Result<(Arc<rune::runtime::RuntimeCon
     let runtime = Arc::new(context.runtime()?);
     
     let mut sources = Sources::new();
+    sources.insert(Source::from_path("games/agricola.rn").unwrap()).unwrap();
     sources.insert(Source::from_path("games/netrunner.rn").unwrap()).unwrap();
     
     let mut diagnostics = Diagnostics::new();

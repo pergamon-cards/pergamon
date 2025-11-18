@@ -1,0 +1,52 @@
+pub async fn agricola_embed(c) {
+    // json string to json value
+    let card = json::from_string(c).unwrap();
+    
+    let embed = #{};
+    
+    embed["title"] = card.get("name").unwrap();
+    
+    let field_header_string = String::from("");
+    
+    field_header_string.push_str(card_type(card.get("type").unwrap()));
+    
+    if card["cost"] is String {
+        field_header_string.push_str(" \u{2022} Cost: ");
+        field_header_string.push_str(card.get("cost").unwrap());
+    }
+    
+    if card["points"] is String {
+        field_header_string.push_str(" \u{2022} Points: ");
+        field_header_string.push_str(card["points"]);
+    }
+    
+    if card["min_players"] is i64 {
+        field_header_string.push_str(" \u{2022} Players: ");
+        field_header_string.push_str(card["min_players"].to_string());
+        field_header_string.push_str("+");
+    }
+
+    embed["field"] = (field_header_string, card.get("text").unwrap());
+
+    let footer_string = String::from("");
+    footer_string.push_str(card.get("edition").unwrap());
+    
+    if card["deck"] is String {
+        footer_string.push_str(" \u{2022} ");
+        footer_string.push_str(card["deck"]);
+        footer_string.push_str(" #");
+        footer_string.push_str(card.get("number").unwrap().to_string());
+    }
+    embed["footer"] = footer_string;
+    
+    embed
+}
+
+fn card_type(code) {
+    match code {
+        "minor" => "Minor Improvement",
+        "major" => "Major Improvement",
+        "occ" => "Occupation",
+        s => s,
+    }
+}
