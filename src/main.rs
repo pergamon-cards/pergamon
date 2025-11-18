@@ -27,29 +27,29 @@ struct State {
     unit: Arc<rune::Unit>,
 }
 
-fn rune_object_to_embed(obj: rune::runtime::Object) -> CreateEmbed {
+fn try_from_rune_object_to_embed(obj: rune::runtime::Object) -> anyhow::Result<CreateEmbed> {
     let mut ret = CreateEmbed::new();
 
     ret = match obj.get("title") {
-        Some(title) => ret.title(title.clone().into_string().unwrap()),
+        Some(title) => ret.title(title.clone().into_string()?),
         None => ret,
     };
 
     ret = match obj.get("url") {
-        Some(url) => ret.url(url.clone().into_string().unwrap()),
+        Some(url) => ret.url(url.clone().into_string()?),
         None => ret,
     };
 
     ret = match obj.get("thumbnail") {
-        Some(thumbnail) => ret.thumbnail(thumbnail.clone().into_string().unwrap()),
+        Some(thumbnail) => ret.thumbnail(thumbnail.clone().into_string()?),
         None => ret,
     };
 
     ret = match obj.get("field") {
         Some(field) => {
-            let field_rt = field.clone().into_tuple().unwrap();
-            let header = field_rt[0].clone().into_string().unwrap();
-            let body = field_rt[1].clone().into_string().unwrap();
+            let field_rt = field.clone().into_tuple()?;
+            let header = field_rt[0].clone().into_string()?;
+            let body = field_rt[1].clone().into_string()?;
             ret.field(header, body, false)
         }
         None => ret,
@@ -57,13 +57,13 @@ fn rune_object_to_embed(obj: rune::runtime::Object) -> CreateEmbed {
 
     ret = match obj.get("footer") {
         Some(footer) => {
-            let footer = CreateEmbedFooter::new(footer.clone().into_string().unwrap());
+            let footer = CreateEmbedFooter::new(footer.clone().into_string()?);
             ret.footer(footer)
         }
         None => ret,
     };
 
-    ret
+    Ok(ret)
 }
 
 #[async_trait]
@@ -208,7 +208,13 @@ impl EventHandler for State {
                 };
 
                 // convert module struct into serenity discord embed
-                let embed = rune_object_to_embed(output);
+                let embed = match try_from_rune_object_to_embed(output) {
+                    Ok(em) => em,
+                    Err(e) => {
+                        println!("Error creating embed from script: {e}");
+                        return;
+                    }
+                };
 
                 // create discord message with embed and send
                 let builder = CreateMessage::new().embed(embed);
