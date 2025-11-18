@@ -12,14 +12,9 @@ use rune::runtime::{Vm, VmResult};
 use rune::termcolor::{ColorChoice, StandardStream};
 use rune::{Diagnostics, Source, Sources};
 
-use serenity::all::{
-    ComponentInteractionDataKind, CreateInteractionResponse, CreateInteractionResponseMessage,
-};
+use serenity::all::{ComponentInteractionDataKind, CreateInteractionResponse, CreateInteractionResponseMessage};
 use serenity::async_trait;
-use serenity::builder::{
-    CreateEmbed, CreateEmbedFooter, CreateMessage, CreateSelectMenu, CreateSelectMenuKind,
-    CreateSelectMenuOption,
-};
+use serenity::builder::{CreateEmbed, CreateEmbedFooter, CreateMessage, CreateSelectMenu, CreateSelectMenuKind, CreateSelectMenuOption};
 use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
@@ -83,12 +78,10 @@ impl EventHandler for State {
         let tq = &q["title_query"];
         let pattern = format!("{tq}%");
 
-        let mut results = match sqlx::query(
-            "SELECT game, title, card FROM cards WHERE title LIKE ? ORDER BY rowid LIMIT 10",
-        )
-        .bind(pattern)
-        .fetch_all(&self.database)
-        .await
+        let mut results = match sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE ? ORDER BY rowid LIMIT 10")
+            .bind(pattern)
+            .fetch_all(&self.database)
+            .await
         {
             Ok(res) => res,
             Err(e) => {
@@ -114,18 +107,11 @@ impl EventHandler for State {
                 .channel_id
                 .send_message(
                     &ctx,
-                    CreateMessage::new()
-                        .content("Please select the card you're looking for")
-                        .select_menu(
-                            CreateSelectMenu::new(
-                                "card_select",
-                                CreateSelectMenuKind::String {
-                                    options: menu_options,
-                                },
-                            )
+                    CreateMessage::new().content("Please select the card you're looking for").select_menu(
+                        CreateSelectMenu::new("card_select", CreateSelectMenuKind::String { options: menu_options })
                             .custom_id("card_select")
                             .placeholder("No card selected"),
-                        ),
+                    ),
                 )
                 .await
             {
@@ -136,11 +122,7 @@ impl EventHandler for State {
                 }
             };
 
-            let interaction = match m
-                .await_component_interaction(&ctx.shard)
-                .timeout(Duration::from_secs(60 * 3))
-                .await
-            {
+            let interaction = match m.await_component_interaction(&ctx.shard).timeout(Duration::from_secs(60 * 3)).await {
                 Some(x) => x,
                 None => {
                     m.reply(&ctx, "Timed out").await.unwrap();
@@ -160,8 +142,7 @@ impl EventHandler for State {
                 .create_response(
                     &ctx,
                     CreateInteractionResponse::UpdateMessage(
-                        CreateInteractionResponseMessage::default()
-                            .content(format!("You chose: **{selected_card}**")),
+                        CreateInteractionResponseMessage::default().content(format!("You chose: **{selected_card}**")),
                     ),
                 )
                 .await
@@ -175,12 +156,10 @@ impl EventHandler for State {
 
             m.delete(&ctx).await.unwrap();
 
-            let entry = match sqlx::query(
-                "SELECT game, title, card FROM cards WHERE title LIKE ? ORDER BY rowid LIMIT 1",
-            )
-            .bind(selected_card)
-            .fetch_one(&self.database)
-            .await
+            let entry = match sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE ? ORDER BY rowid LIMIT 1")
+                .bind(selected_card)
+                .fetch_one(&self.database)
+                .await
             {
                 Ok(res) => res,
                 Err(e) => {
@@ -200,11 +179,7 @@ impl EventHandler for State {
             let vm = Vm::new(self.runtime.clone(), self.unit.clone());
 
             // create execution struct, i.e. rune function call
-            let execution = match vm
-                .try_clone()
-                .unwrap()
-                .send_execute([&game, "embed"], (card,))
-            {
+            let execution = match vm.try_clone().unwrap().send_execute([&game, "embed"], (card,)) {
                 Ok(exe) => exe,
                 Err(e) => {
                     println!("Error creating execution: {e}");
@@ -269,27 +244,15 @@ async fn main() -> anyhow::Result<()> {
 
     let database = sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(5)
-        .connect_with(
-            sqlx::sqlite::SqliteConnectOptions::new()
-                .filename("data/cards.sqlite")
-                .create_if_missing(false),
-        )
+        .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename("data/cards.sqlite").create_if_missing(false))
         .await?;
 
     let (runtime, unit) = create_rune_runtime()?;
 
-    let state = State {
-        database,
-        runtime,
-        unit,
-    };
+    let state = State { database, runtime, unit };
 
-    let intents = GatewayIntents::GUILD_MESSAGES
-        | GatewayIntents::DIRECT_MESSAGES
-        | GatewayIntents::MESSAGE_CONTENT;
-    let mut client = Client::builder(&token, intents)
-        .event_handler(state)
-        .await?;
+    let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::DIRECT_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
+    let mut client = Client::builder(&token, intents).event_handler(state).await?;
 
     if let Err(why) = client.start().await {
         println!("Client error: {why:?}");
@@ -298,8 +261,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn create_rune_runtime()
--> rune::support::Result<(Arc<rune::runtime::RuntimeContext>, Arc<rune::Unit>)> {
+fn create_rune_runtime() -> rune::support::Result<(Arc<rune::runtime::RuntimeContext>, Arc<rune::Unit>)> {
     let mut context = rune::Context::with_default_modules().context("Failed to create context")?;
     context
         .install(rune_modules::json::module(true).context("Failed to load json module")?)
@@ -312,9 +274,7 @@ fn create_rune_runtime()
         let entry = entry?;
         let path = entry.path();
         if path.extension().unwrap() == "rn" {
-            sources
-                .insert(Source::from_path(&path)?)
-                .context(format!("Failed to insert source at {}", path.display()))?;
+            sources.insert(Source::from_path(&path)?).context(format!("Failed to insert source at {}", path.display()))?;
             println!("Loaded game script at {}", path.display());
         }
     }
