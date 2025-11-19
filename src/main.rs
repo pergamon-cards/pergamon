@@ -20,6 +20,10 @@ use serenity::prelude::*;
 
 use sqlx::Row;
 
+use tracing::{error, info, Level};
+use tracing_subscriber::FmtSubscriber;
+
+#[derive(Debug)]
 struct State {
     database: sqlx::SqlitePool,
     runtime: Arc<rune::runtime::RuntimeContext>,
@@ -67,6 +71,7 @@ fn try_from_rune_object_to_embed(obj: rune::runtime::Object) -> anyhow::Result<C
 
 #[async_trait]
 impl EventHandler for State {
+    #[tracing::instrument(level = "info")]
     async fn message(&self, ctx: serenity::all::Context, msg: Message) {
         // build here for debug only, shouldn't be here
         let re = Regex::new(r"\[\[(?<title_query>.*)\]\]").expect("Error building regex");
@@ -84,7 +89,7 @@ impl EventHandler for State {
         {
             Ok(res) => res,
             Err(e) => {
-                println!("Error querying sqlite: {e}");
+                error!("Error querying sqlite: {e}");
                 return;
             }
         };
@@ -114,7 +119,7 @@ impl EventHandler for State {
                     let m = match msg.channel_id.send_message(&ctx, card_selection_msg).await {
                         Ok(res) => res,
                         Err(e) => {
-                            println!("Error sending card selection message: {e}");
+                            error!("Error sending card selection message: {e}");
                             return;
                         }
                     };
@@ -125,7 +130,13 @@ impl EventHandler for State {
                     {
                         Some(x) => x,
                         None => {
-                            m.reply(&ctx, "Timed out").await.unwrap();
+                            match m.reply(&ctx, "Timed out").await {
+                                Ok(res) => res,
+                                Err(e) => {
+                                    error!("Error sending message reply: {e}");
+                                    return;
+                                }
+                            };
                             return;
                         }
                     };
@@ -161,7 +172,7 @@ impl EventHandler for State {
             let execution = match vm.try_clone().unwrap().send_execute([&game, "embed"], (card,)) {
                 Ok(exe) => exe,
                 Err(e) => {
-                    println!("Error creating execution: {e}");
+                    error!("Error creating execution: {e}");
                     return;
                 }
             };
@@ -172,7 +183,7 @@ impl EventHandler for State {
                 let output = match execution.async_complete().await {
                     VmResult::Ok(out) => out,
                     VmResult::Err(e) => {
-                        println!("{e}");
+                        error!("{e}");
                         return;
                     }
                 };
@@ -181,7 +192,7 @@ impl EventHandler for State {
                 let output: rune::runtime::Object = match rune::from_value(output) {
                     Ok(out) => out,
                     Err(e) => {
-                        println!("Error converting from rune value to rune object: {e}");
+                        error!("Error converting from rune value to rune object: {e}");
                         return;
                     }
                 };
@@ -190,7 +201,7 @@ impl EventHandler for State {
                 let embed = match try_from_rune_object_to_embed(output) {
                     Ok(em) => em,
                     Err(e) => {
-                        println!("Error creating embed from script: {e}");
+                        error!("Error creating embed from script: {e}");
                         return;
                     }
                 };
@@ -200,7 +211,7 @@ impl EventHandler for State {
                 let _msg = match msg.channel_id.send_message(&ctx.http, builder).await {
                     Ok(msg) => msg,
                     Err(e) => {
-                        println!("Error sending message to Discord: {e}");
+                        error!("Error sending message to Discord: {e}");
                         return;
                     }
                 };
@@ -210,7 +221,7 @@ impl EventHandler for State {
             let _msg = match msg.channel_id.send_message(&ctx.http, builder).await {
                 Ok(msg) => msg,
                 Err(e) => {
-                    println!("Error sending message to Discord: {e}");
+                    error!("Error sending message to Discord: {e}");
                     return;
                 }
             };
@@ -218,12 +229,19 @@ impl EventHandler for State {
     }
 
     async fn ready(&self, _: serenity::all::Context, ready: Ready) {
-        println!("{} is connected!", ready.user.name);
+        info!("{} is connected!", ready.user.name);
     }
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(Level::INFO)
+        .finish();
+    
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("setting default subscriber failed");
+        
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN")?;
 
@@ -238,14 +256,22 @@ async fn main() -> anyhow::Result<()> {
 
     let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::DIRECT_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
     let mut client = Client::builder(&token, intents).event_handler(state).await?;
+    
+    let shard_manager = client.shard_manager.clone();
+    
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.expect("Could not register ctrl+c handler");
+        shard_manager.shutdown_all().await;
+    });
 
     if let Err(why) = client.start().await {
-        println!("Client error: {why:?}");
+        error!("Client error: {why:?}");
     }
 
     Ok(())
 }
 
+#[tracing::instrument(level = "info", err)]
 fn create_rune_runtime() -> rune::support::Result<(Arc<rune::runtime::RuntimeContext>, Arc<rune::Unit>)> {
     let mut context = rune::Context::with_default_modules().context("Failed to create context")?;
     context
@@ -260,7 +286,7 @@ fn create_rune_runtime() -> rune::support::Result<(Arc<rune::runtime::RuntimeCon
         let path = entry.path();
         if path.extension().unwrap() == "rn" {
             sources.insert(Source::from_path(&path)?).context(format!("Failed to insert source at {}", path.display()))?;
-            println!("Loaded game script at {}", path.display());
+            info!("Loaded game script at {}", path.display());
         }
     }
 
