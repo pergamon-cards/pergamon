@@ -27,7 +27,7 @@ pub mod netrunner {
         } else if type_code == "identity" {
             field_header_string = identity_header(card)
         } else {
-            field_header_string.push_str(type_code(type_code));
+            field_header_string.push_str(type_string(type_code));
             
             match card.get("keywords") {
                 Some(kw) => {
@@ -58,9 +58,9 @@ pub mod netrunner {
         embed["field"] = (field_header_string, card["text"]);
     
         let footer_string = String::from("");
-        footer_string.push_str(faction_code(card["faction_code"]));
+        footer_string.push_str(faction_string(card["faction_code"]));
         footer_string.push_str(" \u{2022} ");
-        footer_string.push_str(pack_code(card["pack_code"]));
+        footer_string.push_str(pack_string(card["pack_code"]));
         footer_string.push_str(" #");
         footer_string.push_str(card["position"].to_string());
         embed["footer"] = footer_string;
@@ -70,7 +70,7 @@ pub mod netrunner {
     
     fn agenda_header(card) {
         let field_header_string = String::from("");
-        field_header_string.push_str(type_code(card["type_code"]));
+        field_header_string.push_str(type_string(card["type_code"]));
         
         match card.get("keywords") {
             Some(kw) => {
@@ -90,7 +90,7 @@ pub mod netrunner {
     
     fn ice_header(card) {
         let field_header_string = String::from("");
-        field_header_string.push_str(type_code(card["type_code"]));
+        field_header_string.push_str(type_string(card["type_code"]));
         
         match card.get("keywords") {
             Some(kw) => {
@@ -122,7 +122,7 @@ pub mod netrunner {
     
     fn identity_header(card) {
         let field_header_string = String::from("");
-        field_header_string.push_str(type_code(card["type_code"]));
+        field_header_string.push_str(type_string(card["type_code"]));
         
         match card.get("keywords") {
             Some(kw) => {
@@ -148,7 +148,7 @@ pub mod netrunner {
         field_header_string
     }
     
-    fn faction_code(code) {
+    fn faction_string(code) {
         match code {
             "anarch" => "Anarch",
             "criminal" => "Criminal",
@@ -161,7 +161,7 @@ pub mod netrunner {
         }
     }
     
-    fn type_code(code) {
+    fn type_string(code) {
         match code {
             "resource" => "Resource",
             "event" => "Event",
@@ -175,7 +175,7 @@ pub mod netrunner {
         }
     }
     
-    fn pack_code(code) {
+    fn pack_string(code) {
         match code {
             "23s" => "Flashpoint (23 Seconds)",
             "asis" => "Genesis (A Study in Static)",
