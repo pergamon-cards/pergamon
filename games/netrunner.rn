@@ -19,53 +19,53 @@ pub mod netrunner {
         embed["thumbnail"] = img_url_string;
         
         let type_code = card["type_code"];
-        let field_header_string = String::from("");
-        if type_code == "agenda" {
+        let field_header_string = if type_code == "agenda" {
             field_header_string = agenda_header(card)
         } else if type_code == "ice" {
             field_header_string = ice_header(card)
         } else if type_code == "identity" {
             field_header_string = identity_header(card)
         } else {
-            field_header_string.push_str(type_string(type_code));
-            
-            match card.get("keywords") {
-                Some(kw) => {
-                    field_header_string.push_str(": ");
-                    field_header_string.push_str(card["keywords"]);
-                }
-                None => (),
-            }
-            
-            field_header_string.push_str(" \u{2022} Cost: ");
-            field_header_string.push_str(card["cost"].to_string());
-            
-            match card.get("trash_cost") {
-                Some(tc) => {
-                    field_header_string.push_str(" \u{2022} Trash: ");
-                    field_header_string.push_str(tc.to_string());
-                }
-                None => ()
-            }
-            
-            field_header_string.push_str(" \u{2022} Influence: ");
-            
-            for _ in 0..card["faction_cost"] {
-                field_header_string.push_str("\u{25cf}");
-            }
-
-        }
-        embed["field"] = (field_header_string, card["text"]);
+            field_header_string = card_header(card)
+        };
+        
+        let card_text = discord_replace(card["text"]);
+        embed["field"] = (field_header_string, card_text);
     
+        let faction_code = card["faction_code"];
         let footer_string = String::from("");
-        footer_string.push_str(faction_string(card["faction_code"]));
+        footer_string.push_str(faction_string(faction_code));
         footer_string.push_str(" \u{2022} ");
         footer_string.push_str(pack_string(card["pack_code"]));
         footer_string.push_str(" #");
         footer_string.push_str(card["position"].to_string());
         embed["footer"] = footer_string;
         
+        embed["color"] = faction_color(faction_code);
+        
         embed
+    }
+    
+    fn discord_replace(text) {
+        let aft = text;
+        
+        let pattern_after = [
+            ("\\[credit\\]", "<:credit:908043074599538719>"),
+            ("\\[click\\]", "<:click:1216994063992229888>"),
+            ("\\[subroutine\\]", "<:subroutine:908043209177976863>"),
+            ("<\\/?strong>", "_"),
+            ("<ul>", "\n"),
+            ("<\\/ul>", ""),
+            ("<li>", "* "),
+            ("<\\/li>", "\n"),
+        ];
+        
+        for (pattern, after) in pattern_after {
+            let regex = super::Regex::new(pattern)?;
+            aft = regex.replace_all(aft, after);
+        }
+        
+        aft
     }
     
     fn agenda_header(card) {
@@ -103,6 +103,9 @@ pub mod netrunner {
         field_header_string.push_str(" \u{2022} Rez: ");
         field_header_string.push_str(card["cost"].to_string());
         
+        field_header_string.push_str(" \u{2022} Strength: ");
+        field_header_string.push_str(card["strength"].to_string());
+        
         match card.get("trash_cost") {
             Some(tc) => {
                 field_header_string.push_str(" \u{2022} Trash: ");
@@ -111,10 +114,13 @@ pub mod netrunner {
             None => ()
         }
         
-        field_header_string.push_str(" \u{2022} Influence: ");
-        
-        for _ in 0..card["faction_cost"] {
-            field_header_string.push_str("\u{25cf}");
+        let faction_cost = card["faction_cost"];
+        if faction_cost > 0 {
+            field_header_string.push_str(" \u{2022} Influence: ");
+            
+            for _ in 0..faction_cost {
+                field_header_string.push_str("\u{25cf}");
+            }
         }
         
         field_header_string
@@ -148,29 +154,83 @@ pub mod netrunner {
         field_header_string
     }
     
+    fn card_header(card) {
+        let field_header_string = String::from("");
+        field_header_string.push_str(type_string(card["type_code"]));
+        
+        match card.get("keywords") {
+            Some(kw) => {
+                field_header_string.push_str(": ");
+                field_header_string.push_str(card["keywords"]);
+            }
+            None => (),
+        }
+        
+        field_header_string.push_str(" \u{2022} Cost: ");
+        field_header_string.push_str(card["cost"].to_string());
+        
+        match card.get("trash_cost") {
+            Some(tc) => {
+                field_header_string.push_str(" \u{2022} Trash: ");
+                field_header_string.push_str(tc.to_string());
+            }
+            None => ()
+        }
+        
+        let faction_cost = card["faction_cost"];
+        if faction_cost > 0 {
+            field_header_string.push_str(" \u{2022} Influence: ");
+            
+            for _ in 0..faction_cost {
+                field_header_string.push_str("\u{25cf}");
+            }
+        }
+        
+        field_header_string
+    }
+    
     fn faction_string(code) {
         match code {
             "anarch" => "Anarch",
             "criminal" => "Criminal",
             "shaper" => "Shaper",
             "nbn" => "NBN",
+            "neutral-corp" => "Neutral (Corp)",
+            "neutral-runner" => "Neutral (Runner)",
             "jinteki" => "Jinteki",
             "weyland-consortium" => "Weyland Consortium",
-            "hass-biodroid" => "Haas-Biodroid",
+            "haas-bioroid" => "Haas-Bioroid",
             s => s,
+        }
+    }
+    
+    fn faction_color(code) {
+        match code {
+            "anarch" => 0xff4500,
+            "criminal" => 0x4169e1,
+            "shaper" => 0x32cd32,
+            "nbn" => 0xff8c00,
+            "neutral-corp" => 0x808080,
+            "neutral-runner" => 0x808080,
+            "jinteki" => 0xdc143c,
+            "weyland-consortium" => 0x006400,
+            "haas-bioroid" => 0x8a2be2,
+            s => 0x404040,
         }
     }
     
     fn type_string(code) {
         match code {
-            "resource" => "Resource",
-            "event" => "Event",
-            "upgrade" => "Upgrade",
             "agenda" => "Agenda",
-            "program" => "Program",
+            "asset" => "Asset",
+            "event" => "Event",
+            "hardware" => "Hardware",
             "ice" => "Ice",
             "identity" => "Identity",
-            "hardware" => "Hardware",
+            "operation" => "Operation",
+            "program" => "Program",
+            "resource" => "Resource",
+            "upgrade" => "Upgrade",
             s => s,
         }
     }
