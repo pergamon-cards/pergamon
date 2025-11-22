@@ -18,6 +18,11 @@ pub fn try_from_rune_object_to_embed(obj: rune::runtime::Object) -> anyhow::Resu
 		Some(title) => ret.title(title.clone().into_string()?),
 		None => ret,
 	};
+	
+	ret = match obj.get("color") {
+		Some(color) => ret.color(color.as_signed()? as u64),
+		None => ret,
+	};
 
 	ret = match obj.get("url") {
 		Some(url) => ret.url(url.clone().into_string()?),
