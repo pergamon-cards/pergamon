@@ -20,13 +20,13 @@ pub mod netrunner {
         
         let type_code = card["type_code"];
         let field_header_string = if type_code == "agenda" {
-            field_header_string = agenda_header(card)
+            agenda_header(card)
         } else if type_code == "ice" {
-            field_header_string = ice_header(card)
+            ice_header(card)
         } else if type_code == "identity" {
-            field_header_string = identity_header(card)
+            identity_header(card)
         } else {
-            field_header_string = card_header(card)
+            card_header(card)
         };
         
         let card_text = discord_replace(card["text"]);
