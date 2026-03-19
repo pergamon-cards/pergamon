@@ -2,10 +2,10 @@ mod regex;
 
 use std::sync::Arc;
 
-use anyhow::Context;
+use anyhow::Context as _;
 
 use rune::termcolor::{ColorChoice, StandardStream};
-use rune::{Diagnostics, Source, Sources};
+use rune::{Context, Diagnostics, Source, Sources};
 
 use serenity::builder::{CreateEmbed, CreateEmbedFooter};
 
@@ -59,7 +59,7 @@ pub fn try_from_rune_object_to_embed(obj: rune::runtime::Object) -> anyhow::Resu
 pub fn create_rune_runtime() -> rune::support::Result<(Arc<rune::runtime::RuntimeContext>, Arc<rune::Unit>)> {
 	let m = regex::Regex::module()?;
 	
-	let mut context = rune::Context::with_default_modules().context("Failed to create context")?;
+	let mut context = Context::with_default_modules().context("Failed to create context")?;
 	context
 		.install(rune_modules::json::module(true).context("Failed to load json module")?)
 		.context("Failed to install context")?;

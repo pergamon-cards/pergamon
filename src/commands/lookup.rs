@@ -38,7 +38,7 @@ pub async fn lookup_inline(state: &State, ctx: serenity::all::Context, msg: Mess
 async fn run(query: String, state: &State, ctx: serenity::all::Context, channel_id: ChannelId) -> anyhow::Result<()> {
     let pattern = format!("{query}%");
 
-    let mut results = sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE ? ORDER BY rowid LIMIT 10")
+    let mut results = sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE $1 ORDER BY id LIMIT 10")
         .bind(pattern)
         .fetch_all(&state.database)
         .await?;
@@ -77,7 +77,7 @@ async fn run(query: String, state: &State, ctx: serenity::all::Context, channel_
             }
         };
 
-        let entry = sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE ? ORDER BY rowid LIMIT 1")
+        let entry = sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE $1 ORDER BY id LIMIT 1")
             .bind(selected_card)
             .fetch_one(&state.database)
             .await?;

@@ -1,16 +1,16 @@
 mod commands;
 mod scripting;
 
+use anyhow::Context as _;
 use serenity::prelude::*;
 use std::env;
 use std::sync::Arc;
 
-use tracing::{Level, error, info};
-use tracing_subscriber::FmtSubscriber;
+use tracing::{error, info};
 
 #[derive(Debug)]
 struct State {
-    database: sqlx::SqlitePool,
+    database: sqlx::PgPool,
     runtime: Arc<rune::runtime::RuntimeContext>,
     unit: Arc<rune::Unit>,
 }
@@ -35,21 +35,15 @@ async fn on_error(error: poise::FrameworkError<'_, State, anyhow::Error>) {
     }
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let subscriber = FmtSubscriber::builder().with_max_level(Level::INFO).finish();
-
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
-
+#[shuttle_runtime::main]
+async fn main(
+    #[shuttle_shared_db::Postgres] database: sqlx::PgPool,
+    #[shuttle_runtime::Secrets] secrets: shuttle_runtime::SecretStore,
+) -> shuttle_serenity::ShuttleSerenity {
     // Configure the client with your Discord bot token in the environment.
-    let token = env::var("DISCORD_TOKEN")?;
+    let discord_token = secrets.get("DISCORD_TOKEN").context("discord token not found")?;
     // let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::DIRECT_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
     let intents = GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT;
-
-    let database = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename("data/cards.sqlite").create_if_missing(false))
-        .await?;
 
     let (runtime, unit) = scripting::create_rune_runtime()?;
 
@@ -65,20 +59,23 @@ async fn main() -> anyhow::Result<()> {
         })
         .build();
 
-    let mut client = serenity::Client::builder(&token, intents).framework(framework).await?;
+    let mut client = serenity::Client::builder(&discord_token, intents)
+        .framework(framework)
+        .await
+        .map_err(shuttle_runtime::CustomError::new)?;
 
     let shard_manager = client.shard_manager.clone();
 
     tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.expect("Could not register ctrl+c handler");
+        tokio::signal::ctrl_c().await.expect("unable to register ctrl+c handler");
         shard_manager.shutdown_all().await;
     });
 
     if let Err(why) = client.start().await {
-        error!("Client error: {why:?}");
+        error!("serenity client error: {why:?}");
     }
 
-    Ok(())
+    Ok(client.into())
 }
 
 async fn event_handler(

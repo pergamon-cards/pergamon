@@ -4,3 +4,6 @@ data/netrunner/*
 !data/netrunner/*.py
 target/
 *.DS_Store
+/target
+.shuttle*
+Secrets*.toml

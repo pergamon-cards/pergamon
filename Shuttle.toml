@@ -1,0 +1,5 @@
+# Declare files that should be copied to the runtime image:
+[build]
+assets = [
+  "games/*", # include all game scripts
+]

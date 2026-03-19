@@ -11,6 +11,8 @@ pub mod agricola {
         
         field_header_string.push_str(card_type(card["type"]));
         
+        embed["color"] = card_color(card["type"]);
+        
         if card["cost"] is String {
             field_header_string.push_str(" \u{2022} Cost: ");
             field_header_string.push_str(card["cost"]);
@@ -48,6 +50,15 @@ pub mod agricola {
             "minor" => "Minor Improvement",
             "major" => "Major Improvement",
             "occ" => "Occupation",
+            s => s,
+        }
+    }
+    
+    fn card_color(code) {
+        match code {
+            "minor" => 0xd39926, // 211, 153, 38
+            "major" => 0x93433c, // 147, 67, 60
+            "occ" => 0xdad13b, // 218, 209, 59
             s => s,
         }
     }
