@@ -11,7 +11,7 @@ use serenity::builder::{CreateEmbed, CreateEmbedFooter};
 
 use tracing::info;
 
-pub fn try_from_rune_object_to_embed(obj: rune::runtime::Object) -> anyhow::Result<CreateEmbed> {
+pub fn _try_from_rune_object_to_embed(obj: rune::runtime::Object) -> anyhow::Result<CreateEmbed> {
 	let mut ret = CreateEmbed::new();
 
 	ret = match obj.get("title") {
@@ -56,7 +56,7 @@ pub fn try_from_rune_object_to_embed(obj: rune::runtime::Object) -> anyhow::Resu
 }
 
 #[tracing::instrument(level = "info", err)]
-pub fn create_rune_runtime() -> rune::support::Result<(Arc<rune::runtime::RuntimeContext>, Arc<rune::Unit>)> {
+pub fn _create_rune_runtime() -> rune::support::Result<(Arc<rune::runtime::RuntimeContext>, Arc<rune::Unit>)> {
 	let m = regex::Regex::module()?;
 	
 	let mut context = Context::with_default_modules().context("Failed to create context")?;

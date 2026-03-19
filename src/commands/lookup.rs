@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use regex::Regex;
 
-use rune::alloc::prelude::TryClone;
-use rune::runtime::{Vm, VmResult};
+// use rune::alloc::prelude::TryClone;
+// use rune::runtime::{Vm, VmResult};
 
 use serenity::all::ChannelId;
 use serenity::builder::{CreateButton, CreateMessage};
@@ -14,7 +14,7 @@ use sqlx::Row;
 
 use tracing::{error, info};
 
-use crate::{State, scripting};
+use crate::{State, py::get_embed, /*scripting*/};
 
 #[poise::command(prefix_command, slash_command)]
 pub async fn lookup(ctx: poise::Context<'_, State, anyhow::Error>, title: String) -> anyhow::Result<()> {
@@ -86,54 +86,65 @@ async fn run(query: String, state: &State, ctx: serenity::all::Context, channel_
     };
 
     if let Some(row) = entry {
-        let card = row.get::<String, _>("card"); // get json data as string (for rune reasons)
+        let card = row.get::<serde_json::Value, _>("card");
         let game = row.get::<String, _>("game");
+        
+        let embed = get_embed(&card, game.as_str())?.into();
+        
+        // create discord message with embed and send
+        let builder = CreateMessage::new().embed(embed);
+        let _msg = channel_id.send_message(&ctx.http, builder)
+            .await
+            .inspect_err(|e| error!("Error sending message to Discord: {e}"))?;
 
-        // build rune vm
-        let vm = Vm::new(state.runtime.clone(), state.unit.clone());
-
-        // create execution struct, i.e. rune function call
-        let execution = vm.try_clone().unwrap().send_execute([&game, "embed"], (card,))?;
-
-        // run in separate thread
-        let _ = tokio::spawn(async move {
-            // run rune function
-            let output = match execution.async_complete().await {
-                VmResult::Ok(out) => out,
-                VmResult::Err(e) => {
-                    error!("Error running rune function: {e}");
-                    return;
-                }
-            };
-
-            // convert rune value into module struct
-            let output: rune::runtime::Object = match rune::from_value(output) {
-                Ok(out) => out,
-                Err(e) => {
-                    error!("Error converting from rune value to rune object: {e}");
-                    return;
-                }
-            };
-
-            // convert module struct into serenity discord embed
-            let embed = match scripting::try_from_rune_object_to_embed(output) {
-                Ok(em) => em,
-                Err(e) => {
-                    error!("Error creating embed from script: {e}");
-                    return;
-                }
-            };
-
-            // create discord message with embed and send
-            let builder = CreateMessage::new().embed(embed);
-            let _msg = match channel_id.send_message(&ctx.http, builder).await {
-                Ok(msg) => msg,
-                Err(e) => {
-                    error!("Error sending message to Discord: {e}");
-                    return;
-                }
-            };
-        });
+//         let card = row.get::<String, _>("card"); // get json data as string (for rune reasons)
+//         let game = row.get::<String, _>("game");
+// 
+//         // build rune vm
+//         let vm = Vm::new(state.runtime.clone(), state.unit.clone());
+// 
+//         // create execution struct, i.e. rune function call
+//         let execution = vm.try_clone().unwrap().send_execute([&game, "embed"], (card,))?;
+// 
+//         // run in separate thread
+//         let _ = tokio::spawn(async move {
+//             // run rune function
+//             let output = match execution.async_complete().await {
+//                 VmResult::Ok(out) => out,
+//                 VmResult::Err(e) => {
+//                     error!("Error running rune function: {e}");
+//                     return;
+//                 }
+//             };
+// 
+//             // convert rune value into module struct
+//             let output: rune::runtime::Object = match rune::from_value(output) {
+//                 Ok(out) => out,
+//                 Err(e) => {
+//                     error!("Error converting from rune value to rune object: {e}");
+//                     return;
+//                 }
+//             };
+// 
+//             // convert module struct into serenity discord embed
+//             let embed = match scripting::try_from_rune_object_to_embed(output) {
+//                 Ok(em) => em,
+//                 Err(e) => {
+//                     error!("Error creating embed from script: {e}");
+//                     return;
+//                 }
+//             };
+// 
+//             // create discord message with embed and send
+//             let builder = CreateMessage::new().embed(embed);
+//             let _msg = match channel_id.send_message(&ctx.http, builder).await {
+//                 Ok(msg) => msg,
+//                 Err(e) => {
+//                     error!("Error sending message to Discord: {e}");
+//                     return;
+//                 }
+//             };
+//         });
     } else {
         let builder = CreateMessage::new().content(&format!("{query} not found"));
         let _msg = channel_id.send_message(&ctx.http, builder).await?;

@@ -1,18 +1,19 @@
 mod commands;
+mod py;
 mod scripting;
 
 use anyhow::Context as _;
 use serenity::prelude::*;
 use std::env;
-use std::sync::Arc;
+// use std::sync::Arc;
 
 use tracing::{error, info};
 
 #[derive(Debug)]
 struct State {
     database: sqlx::PgPool,
-    runtime: Arc<rune::runtime::RuntimeContext>,
-    unit: Arc<rune::Unit>,
+    // runtime: Arc<rune::runtime::RuntimeContext>,
+    // unit: Arc<rune::Unit>,
 }
 
 #[poise::command(prefix_command)]
@@ -45,9 +46,9 @@ async fn main(
     // let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::DIRECT_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
     let intents = GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT;
 
-    let (runtime, unit) = scripting::create_rune_runtime()?;
+    // let (runtime, unit) = scripting::create_rune_runtime()?;
 
-    let state = State { database, runtime, unit };
+    let state = State { database, /*runtime, unit*/ };
 
     let framework = poise::Framework::builder()
         .setup(move |_ctx, _ready, _framework| Box::pin(async move { Ok(state) }))

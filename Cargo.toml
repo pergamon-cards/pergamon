@@ -1,6 +1,6 @@
 [package]
 name = "pergamon"
-version = "0.1.0"
+version = "0.2.0-alpha.1"
 authors = ["Matthew Waymost <matthew@waymost.net>"]
 edition = "2024"
 
@@ -8,6 +8,8 @@ edition = "2024"
 anyhow = "1.0"
 # crossterm = "0.29"
 poise = "0.6"
+pyo3 = "0.28"
+pythonize = "0.28"
 regex = "1.12"
 rune = "0.14.1"
 rune-modules = { version = "0.14.1", features = ["json"] }
