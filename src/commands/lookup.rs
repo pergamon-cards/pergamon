@@ -90,7 +90,7 @@ async fn run(query: String, state: &State, ctx: serenity::all::Context, channel_
         let game = row.get::<String, _>("game");
         
         let embed = get_embed(&card, game.as_str())?.into();
-        
+        println!("{embed:?}");
         // create discord message with embed and send
         let builder = CreateMessage::new().embed(embed);
         let _msg = channel_id.send_message(&ctx.http, builder)

@@ -1,11 +1,14 @@
 def embed(card):
     embed = {}
+    print("foo")
     
     embed["title"] = card["title"]
     
     embed["url"] = "https://netrunnerdb.com/en/card/" + card["code"]
     
     embed["thumbnail"] = "https://card-images.netrunnerdb.com/v2/large/" + card["code"] + ".jpg"
+    
+    print(embed)
     
     type_code = card["type_code"];
     field_header_string = ""
@@ -17,27 +20,32 @@ def embed(card):
         field_header_string = identity_header(card)
     else:
         field_header_string = card_header(card)
+        
+    print(embed)
     
     # card_text = discord_replace(card["text"]);
     card_text = card["text"]
     embed["field"] = (field_header_string, card_text)
     
     faction_code = card["faction_code"]
-    embed["footer"] = \
-        faction_string(faction_code) + \
-        " \u2022 " + \
-        pack_string(card["pack_code"]) + \
-        " #" + \
+    embed["footer"] = ({ "text" : \
+        faction_string(faction_code) +
+        " \u2022 " +
+        pack_string(card["pack_code"]) +
+        " #" +
         str(card["position"])
+    })
     
     embed["color"] = faction_color(faction_code)
     
-    embed
+    print(embed)
+    
+    return embed
 
 def agenda_header(card):
     field_header_string = type_string(card["type_code"])
     
-    if card["keywords"] is not None:
+    if "keywords" in card.keys():
         field_header_string += ": " + card["keywords"]
     
     field_header_string += \
@@ -46,12 +54,12 @@ def agenda_header(card):
         "/" + \
         str(card["agenda_points"])
     
-    field_header_string
+    return field_header_string
 
 def ice_header(card):
     field_header_string = type_string(card["type_code"])
     
-    if card["keywords"] is not None:
+    if "keywords" in card.keys():
         field_header_string += ": " + card["keywords"]
     
     field_header_string += \
@@ -60,7 +68,7 @@ def ice_header(card):
         " \u2022 Strength: " + \
         str(card["strength"])
     
-    if card["trash_cost"] is not None:
+    if "trash_cost" in card.keys():
         field_header_string += " \u2022 Trash: " + str(card["trash_cost"])
     
     faction_cost = card["faction_cost"]
@@ -69,12 +77,12 @@ def ice_header(card):
             " \u2022 Influence: " + \
             influence_string(faction_cost)
     
-    field_header_string
+    return field_header_string
 
 def identity_header(card):
     field_header_string = type_string(card["type_code"])
     
-    if card["keywords"] is not None:
+    if "keywords" in card.keys():
         field_header_string += ": " + card["keywords"]
         
     field_header_string += \
@@ -83,36 +91,38 @@ def identity_header(card):
         "/" + \
         str(card["influence_limit"])
         
-    if card["base_link"] is not None:
+    if "base_link" in card.keys():
         field_header_string += " \u2022 Link: " + str(card["base_link"])
     
-    field_header_string
+    return field_header_string
 
 def card_header(card):
     field_header_string = type_string(card["type_code"])
     
-    if card["keywords"] is not None:
+    if "keywords" in card.keys():
         field_header_string += ": " + card["keywords"]
-            
+        
     field_header_string += \
         " \u2022 Cost: " + \
         str(card["cost"])
         
-    if card["trash_cost"] is not None:
+    if "trash_cost" in card.keys():
         field_header_string += " \u2022 Trash: " + str(card["trash_cost"])
         
     faction_cost = card["faction_cost"]
+    
     if faction_cost > 0:
         field_header_string += \
             " \u2022 Influence: " + \
             influence_string(faction_cost)
-    
-    field_header_string
+            
+    return field_header_string
 
 def influence_string(faction_cost):
-    "".join(["\u25cf" for _ in range(faction_cost)])
+    return "".join(["\u25cf" for _ in range(faction_cost)])
 
 def faction_string(code):
+    print("faction string fn")
     match code:
         case "anarch":
             return "Anarch"
@@ -184,6 +194,7 @@ def type_string(code):
             return s
 
 def pack_string(code):
+    print("pack string fn")
     match code:
         case "23s":
             return "Flashpoint (23 Seconds)"

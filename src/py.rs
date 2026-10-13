@@ -92,14 +92,17 @@ pub fn get_embed(card: &serde_json::Value, game: &str) -> Result<PergamonEmbed> 
             py,
             CString::new(code)?.as_c_str(),
             CString::from_str(&format!("{game}.py"))?.as_ref(),
-            c"example",
+            CString::from_str(&format!("{game}"))?.as_ref(),
         )?
         .getattr("embed")?
         .into();
         
         let args = (card_py, );
+        println!("before python call1");
         let embed_py = embed_fn.call1(py, args)?; // .extract(py)?;
+        println!("after python call1");
         let embed = depythonize(&embed_py.into_bound(py))?;
+        println!("{embed:?}");
         
         Ok(embed)
     })

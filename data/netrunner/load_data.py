@@ -2,19 +2,12 @@ import json
 import os
 import psycopg
 
-# db_table = "cards"
-# db_user = "postgres"
-# db_pass = "postgres"
-# db_host = "localhost"
-# db_port = 16825
-# db_name = "pergamon"
-
 db_table = "cards"
-db_user = "<shuttle-user>"
-db_pass = "<shuttle-password>"
-db_host = "<shuttle-host>"
+db_user = "postgres"
+db_pass = "postgres"
+db_host = "localhost"
 db_port = 5432
-db_name = "<shuttle-db>"
+db_name = "pergamon"
 
 game = 'netrunner'
 
@@ -44,7 +37,7 @@ with psycopg.connect(db_psycopg_connection_string) as conn:
                 id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
                 game TEXT,
                 title TEXT,
-                card TEXT -- json
+                card JSONB -- json
             )
         """)
     

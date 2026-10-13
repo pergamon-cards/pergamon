@@ -1,13 +1,18 @@
 mod commands;
 mod py;
 mod scripting;
+mod settings;
 
-use anyhow::Context as _;
+use anyhow::Result;
 use serenity::prelude::*;
-use std::env;
+use sqlx::postgres::{PgConnectOptions, /*PgPool,*/ PgPoolOptions, PgSslMode};
+// use std::env;
 // use std::sync::Arc;
 
 use tracing::{error, info};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+use crate::settings::Settings;
 
 #[derive(Debug)]
 struct State {
@@ -36,17 +41,37 @@ async fn on_error(error: poise::FrameworkError<'_, State, anyhow::Error>) {
     }
 }
 
-#[shuttle_runtime::main]
-async fn main(
-    #[shuttle_shared_db::Postgres] database: sqlx::PgPool,
-    #[shuttle_runtime::Secrets] secrets: shuttle_runtime::SecretStore,
-) -> shuttle_serenity::ShuttleSerenity {
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "pergamon=debug,tower_http=debug".into()))
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+    
+    // load settings
+    Settings::new_global().inspect_err(|e| tracing::error!("{}", e.to_string()))?;
+    
     // Configure the client with your Discord bot token in the environment.
-    let discord_token = secrets.get("DISCORD_TOKEN").context("discord token not found")?;
+    let discord_token = Settings::global().token.as_str();
     // let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::DIRECT_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
     let intents = GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT;
 
     // let (runtime, unit) = scripting::create_rune_runtime()?;
+    
+    // create db connection options
+    let db_options = PgConnectOptions::new()
+        .host(Settings::global().database.host.as_str())
+        .port(Settings::global().database.port)
+        .username(Settings::global().database.username.as_str())
+        .password(Settings::global().database.password.as_str())
+        .database(Settings::global().database.database.as_str())
+        .ssl_mode(PgSslMode::Prefer);
+    
+    // create db connection pool
+    let database = PgPoolOptions::new()
+        .max_connections(Settings::global().database.max_connections)
+        .connect_with(db_options).await
+        .inspect_err(|e| tracing::error!("{}", e.to_string()))?;
 
     let state = State { database, /*runtime, unit*/ };
 
@@ -62,8 +87,7 @@ async fn main(
 
     let mut client = serenity::Client::builder(&discord_token, intents)
         .framework(framework)
-        .await
-        .map_err(shuttle_runtime::CustomError::new)?;
+        .await?;
 
     let shard_manager = client.shard_manager.clone();
 
@@ -71,12 +95,14 @@ async fn main(
         tokio::signal::ctrl_c().await.expect("unable to register ctrl+c handler");
         shard_manager.shutdown_all().await;
     });
+    
+    tracing::info!("starting serenity client");
 
     if let Err(why) = client.start().await {
         error!("serenity client error: {why:?}");
     }
 
-    Ok(client.into())
+    Ok(())
 }
 
 async fn event_handler(
