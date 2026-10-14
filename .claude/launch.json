@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "cargo",
+      "runtimeArgs": ["run", "-p", "backend"],
+      "port": 3000
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": ["task", "--cwd", "frontend", "dev"],
+      "port": 1420
+    }
+  ]
+}
