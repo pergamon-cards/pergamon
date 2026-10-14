@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use config::{Config, ConfigError, Environment, File};
 use once_cell::sync::OnceCell;
 use serde::Deserialize;
@@ -33,12 +35,19 @@ impl Settings {
 
         tracing::info!("loading settings for {run_env} environment");
 
-        let settings = Config::builder()
-            .add_source(File::with_name(&format!("config/{run_env}")))
-            .add_source(Environment::with_prefix("PERGAMON"))
-            .build()?;
+        let env: HashMap<String, String> = std::env::vars().collect();
 
-        settings.try_deserialize()
+        Self::from_sources(&format!("config/{run_env}"), env)
+    }
+
+    /// Loads the config file at `path` (extension optional), then overlays `PERGAMON_*` entries of `env`.
+    /// Reads neither the process environment nor the global settings.
+    pub fn from_sources(path: &str, env: HashMap<String, String>) -> Result<Self, ConfigError> {
+        Config::builder()
+            .add_source(File::with_name(path))
+            .add_source(Environment::with_prefix("PERGAMON").source(Some(env)))
+            .build()?
+            .try_deserialize()
     }
 
     pub fn new_global() -> Result<(), ConfigError> {
