@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use regex::Regex;
@@ -10,7 +10,8 @@ use serenity::all::ChannelId;
 use serenity::builder::{CreateButton, CreateMessage};
 use serenity::model::channel::Message;
 
-use sqlx::Row;
+use sqlx::postgres::PgRow;
+use sqlx::{PgPool, Row};
 
 use tracing::{error, info};
 
@@ -21,44 +22,117 @@ pub async fn lookup(ctx: poise::Context<'_, State, anyhow::Error>, title: String
     run(title, ctx.data(), ctx.serenity_context().clone(), ctx.channel_id()).await
 }
 
-pub async fn lookup_inline(state: &State, ctx: serenity::all::Context, msg: Message) {
-    // build here for debug only, shouldn't be here
-    let re = Regex::new(r"\[\[(?<title_query>.*)\]\]").expect("Error building regex");
+/// A card row as stored in the `cards` table.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CardRow {
+    pub game: String,
+    pub title: String,
+    pub card: serde_json::Value,
+}
 
-    if let Some(q) = re.captures(&msg.content) {
-        let query = &q["title_query"];
+impl CardRow {
+    fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+        Ok(Self {
+            game: row.try_get("game")?,
+            title: row.try_get("title")?,
+            card: row.try_get("card")?,
+        })
+    }
+}
+
+/// What a prefix search resolved to.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LookupOutcome {
+    NotFound,
+    Found(CardRow),
+    /// Distinct titles, in the order they were returned.
+    Ambiguous(Vec<String>),
+}
+
+/// Returns the (trimmed, non-empty) text of every `[[...]]` in a message.
+pub fn parse_inline_queries(content: &str) -> Vec<String> {
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[\[(?<title_query>.+?)\]\]").expect("Error building regex"));
+
+    RE.captures_iter(content)
+        .map(|c| c["title_query"].trim().to_string())
+        .filter(|q| !q.is_empty())
+        .collect()
+}
+
+/// Escapes `\`, `%` and `_` so user text matches literally in a `LIKE` pattern.
+pub fn escape_like(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Decides what to do with the rows of a prefix search.
+pub fn resolve(rows: Vec<CardRow>) -> LookupOutcome {
+    let mut titles: Vec<String> = Vec::new();
+    for row in &rows {
+        if !titles.contains(&row.title) {
+            titles.push(row.title.clone());
+        }
+    }
+
+    match titles.len() {
+        0 => LookupOutcome::NotFound,
+        1 => LookupOutcome::Found(rows.into_iter().next().expect("rows is not empty")),
+        _ => LookupOutcome::Ambiguous(titles),
+    }
+}
+
+/// Cards whose title starts with `query`, oldest first.
+pub async fn find_cards(pool: &PgPool, query: &str) -> anyhow::Result<Vec<CardRow>> {
+    let pattern = format!("{}%", escape_like(query));
+
+    let rows = sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE $1 ORDER BY id LIMIT 10")
+        .bind(pattern)
+        .fetch_all(pool)
+        .await?;
+
+    Ok(rows.iter().map(CardRow::from_row).collect::<Result<_, _>>()?)
+}
+
+/// The first card whose title is exactly `title`.
+pub async fn find_exact(pool: &PgPool, title: &str) -> anyhow::Result<Option<CardRow>> {
+    let row = sqlx::query("SELECT game, title, card FROM cards WHERE title = $1 ORDER BY id LIMIT 1")
+        .bind(title)
+        .fetch_optional(pool)
+        .await?;
+
+    Ok(row.as_ref().map(CardRow::from_row).transpose()?)
+}
+
+/// The message with one button per title; a button's custom id is the title.
+pub fn disambiguation_message(titles: &[String]) -> CreateMessage {
+    titles.iter().fold(
+        CreateMessage::new().content("Please select the card you're looking for"),
+        |msg, t| msg.button(CreateButton::new(t).label(t)),
+    )
+}
+
+pub async fn lookup_inline(state: &State, ctx: serenity::all::Context, msg: Message) {
+    for query in parse_inline_queries(&msg.content) {
         info!("Captured card lookup for {query} from message");
 
-        if let Err(e) = run(query.to_string(), state, ctx, msg.channel_id).await {
+        if let Err(e) = run(query, state, ctx.clone(), msg.channel_id).await {
             error!("{e}");
         }
     }
 }
 
 async fn run(query: String, state: &State, ctx: serenity::all::Context, channel_id: ChannelId) -> anyhow::Result<()> {
-    let pattern = format!("{query}%");
-
-    let mut results = sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE $1 ORDER BY id LIMIT 10")
-        .bind(pattern)
-        .fetch_all(&state.database)
-        .await?;
-
-    let entry = if results.len() == 1 {
-        Some(results.remove(0))
-    } else if results.len() == 0 {
-        None
-    } else {
-        let unique_card_titles = results.iter().map(|r| r.get::<String, _>("title")).collect::<HashSet<_>>();
-
-        let selected_card = if unique_card_titles.len() == 1 {
-            results[0].get::<String, _>("title")
-        } else {
-            let card_selection_buttons = unique_card_titles.iter().map(|t| CreateButton::new(t).label(t)).collect::<Vec<_>>();
-
-            let card_selection_msg_init = CreateMessage::new().content("Please select the card you're looking for");
-            let card_selection_msg = card_selection_buttons.into_iter().fold(card_selection_msg_init, |acc, b| acc.button(b));
-
-            let m = channel_id.send_message(&ctx, card_selection_msg).await?;
+    let entry = match resolve(find_cards(&state.database, &query).await?) {
+        LookupOutcome::NotFound => None,
+        LookupOutcome::Found(row) => Some(row),
+        LookupOutcome::Ambiguous(titles) => {
+            let m = channel_id.send_message(&ctx, disambiguation_message(&titles)).await?;
 
             let interaction = match m.await_component_interaction(&ctx.shard).timeout(Duration::from_secs(60 * 3)).await {
                 Some(x) => Some(x),
@@ -70,26 +144,15 @@ async fn run(query: String, state: &State, ctx: serenity::all::Context, channel_
 
             m.delete(&ctx).await.unwrap();
 
-            if let Some(interaction) = interaction {
-                interaction.data.custom_id
-            } else {
-                return Ok(());
+            match interaction {
+                Some(interaction) => find_exact(&state.database, &interaction.data.custom_id).await?,
+                None => return Ok(()),
             }
-        };
-
-        let entry = sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE $1 ORDER BY id LIMIT 1")
-            .bind(selected_card)
-            .fetch_one(&state.database)
-            .await?;
-
-        Some(entry)
+        }
     };
 
     if let Some(row) = entry {
-        let card = row.get::<serde_json::Value, _>("card");
-        let game = row.get::<String, _>("game");
-        
-        let embed = get_embed(&card, game.as_str())?.into();
+        let embed = get_embed(&row.card, row.game.as_str())?.into();
         println!("{embed:?}");
         // create discord message with embed and send
         let builder = CreateMessage::new().embed(embed);
