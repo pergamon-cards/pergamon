@@ -1,4 +1,4 @@
-use std::{ffi::CString, str::FromStr};
+use std::{ffi::CString, path::Path, str::FromStr};
 
 use anyhow::Result;
 use pyo3::prelude::*;
@@ -83,27 +83,29 @@ impl From<PergamonEmbedFooter> for CreateEmbedFooter {
     }
 }
 
-pub fn get_embed(card: &serde_json::Value, game: &str) -> Result<PergamonEmbed> {
-    let code = std::fs::read_to_string(format!("games/{game}.py"))?;
-    
+/// Runs `code` as the module `module` and calls its `embed(card)` function.
+pub fn render_embed(code: &str, module: &str, card: &serde_json::Value) -> Result<PergamonEmbed> {
     Python::attach(|py| -> Result<PergamonEmbed> {
-        let card_py = pythonize(py, &card)?;
+        let card_py = pythonize(py, card)?;
         let embed_fn: Py<PyAny> = PyModule::from_code(
             py,
             CString::new(code)?.as_c_str(),
-            CString::from_str(&format!("{game}.py"))?.as_ref(),
-            CString::from_str(&format!("{game}"))?.as_ref(),
+            CString::from_str(&format!("{module}.py"))?.as_ref(),
+            CString::from_str(module)?.as_ref(),
         )?
         .getattr("embed")?
         .into();
-        
-        let args = (card_py, );
-        println!("before python call1");
-        let embed_py = embed_fn.call1(py, args)?; // .extract(py)?;
-        println!("after python call1");
+
+        let embed_py = embed_fn.call1(py, (card_py,))?;
         let embed = depythonize(&embed_py.into_bound(py))?;
-        println!("{embed:?}");
-        
+
         Ok(embed)
     })
+}
+
+/// Reads `<scripts_dir>/<game>.py` on every call, so script edits take effect without a rebuild.
+pub fn get_embed(scripts_dir: &Path, game: &str, card: &serde_json::Value) -> Result<PergamonEmbed> {
+    let code = std::fs::read_to_string(scripts_dir.join(format!("{game}.py")))?;
+
+    render_embed(&code, game, card)
 }

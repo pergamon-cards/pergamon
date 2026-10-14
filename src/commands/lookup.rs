@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -152,7 +153,7 @@ async fn run(query: String, state: &State, ctx: serenity::all::Context, channel_
     };
 
     if let Some(row) = entry {
-        let embed = get_embed(&row.card, row.game.as_str())?.into();
+        let embed = get_embed(Path::new("games"), &row.game, &row.card)?.into();
         println!("{embed:?}");
         // create discord message with embed and send
         let builder = CreateMessage::new().embed(embed);
