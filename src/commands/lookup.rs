@@ -16,7 +16,7 @@ use sqlx::{PgPool, Row};
 
 use tracing::{error, info};
 
-use crate::{State, py::get_embed, /*scripting*/};
+use crate::{State, py::{get_embed, validate_embed}, /*scripting*/};
 
 #[poise::command(prefix_command, slash_command)]
 pub async fn lookup(ctx: poise::Context<'_, State, anyhow::Error>, title: String) -> anyhow::Result<()> {
@@ -153,7 +153,9 @@ async fn run(query: String, state: &State, ctx: serenity::all::Context, channel_
     };
 
     if let Some(row) = entry {
-        let embed = get_embed(Path::new("games"), &row.game, &row.card)?.into();
+        let embed = get_embed(Path::new("games"), &row.game, &row.card)?;
+        validate_embed(&embed)?;
+        let embed = embed.into();
         println!("{embed:?}");
         // create discord message with embed and send
         let builder = CreateMessage::new().embed(embed);
