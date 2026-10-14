@@ -5,5 +5,3 @@ data/netrunner/*
 target/
 *.DS_Store
 /target
-.shuttle*
-Secrets*.toml

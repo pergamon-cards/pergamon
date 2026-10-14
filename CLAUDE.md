@@ -49,6 +49,5 @@ Request flow:
 
 ## Legacy / in-transition code
 
-The project recently migrated card scripts from Rune to Python and moved off Shuttle hosting:
+The project recently migrated card scripts from Rune to Python:
 - `src/scripting/` (Rune runtime + a `Regex` module exposed to Rune) and `games/*.rn` are unused; the Rune path in `lookup.rs` is commented out. The `rune` dependencies are still in Cargo.toml.
-- `Shuttle.toml`, `.shuttle/`, and `Secrets.toml` are leftovers from Shuttle deployment; the Shuttle crates have been removed and `main` is a plain `#[tokio::main]`.
