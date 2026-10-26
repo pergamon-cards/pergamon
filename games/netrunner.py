@@ -1,3 +1,12 @@
+MAX_FIELD_VALUE = 1024
+
+
+def truncate(text, limit):
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1] + "\u2026"
+
+
 def embed(card):
     embed = {}
     print("foo")
@@ -26,7 +35,7 @@ def embed(card):
     
     # card_text = discord_replace(card["text"]);
     card_text = card["text"]
-    embed["field"] = (field_header_string, card_text)
+    embed["fields"] = [{"name": field_header_string, "value": truncate(card_text, MAX_FIELD_VALUE)}]
     
     faction_code = card["faction_code"]
     embed["footer"] = ({ "text" : \
