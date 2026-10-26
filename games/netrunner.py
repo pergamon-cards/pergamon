@@ -14,16 +14,12 @@ def fmt(value, none="X"):
 
 def embed(card):
     embed = {}
-    print("foo")
-    
     embed["title"] = card["title"]
     
     embed["url"] = "https://netrunnerdb.com/en/card/" + card["code"]
     
     if card.get("image_url"):
         embed["thumbnail"] = card["image_url"]
-    
-    print(embed)
     
     type_code = card["type_code"];
     field_header_string = ""
@@ -36,8 +32,6 @@ def embed(card):
     else:
         field_header_string = card_header(card)
         
-    print(embed)
-    
     # card_text = discord_replace(card["text"]);
     card_text = card.get("text") or ""
     # Discord rejects an empty field value, so a card without text gets no field
@@ -54,8 +48,6 @@ def embed(card):
     })
     
     embed["color"] = faction_color(faction_code)
-    
-    print(embed)
     
     return embed
 
@@ -139,7 +131,6 @@ def influence_string(faction_cost):
     return "".join(["\u25cf" for _ in range(faction_cost)])
 
 def faction_string(code):
-    print("faction string fn")
     match code:
         case "anarch":
             return "Anarch"
@@ -211,7 +202,6 @@ def type_string(code):
             return s
 
 def pack_string(code):
-    print("pack string fn")
     match code:
         case "23s":
             return "Flashpoint (23 Seconds)"

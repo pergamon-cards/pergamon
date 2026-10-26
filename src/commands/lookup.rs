@@ -251,7 +251,6 @@ async fn run(query: &str, state: &State, ctx: &serenity::all::Context, channel_i
             let embed = get_embed(Path::new("games"), &row.game, &row.card)?;
             validate_embed(&embed)?;
             let embed = embed.into();
-            println!("{embed:?}");
             Ok(Reply::Embed(Box::new(embed)))
         }
         None => Ok(Reply::Text(format!("{query} not found"))),
