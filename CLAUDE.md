@@ -31,7 +31,7 @@ Loading card data (Netrunner): clone https://github.com/Null-Signal-Games/netrun
 cd data/netrunner && python load_data.py
 ```
 
-It creates the `cards` table if missing and replaces all rows for that game. DB connection values are hard-coded at the top of the script.
+It replaces all rows for that game and does not create tables: run the bot once first so the migrations have created them. DB connection values are hard-coded at the top of the script.
 
 Note: README.md is stale — it mentions a sqlite DB and a `DISCORD_TOKEN` env var; the bot now uses Postgres and the settings system below.
 
@@ -53,7 +53,13 @@ Request flow:
 
 **Game script contract** (`games/<game>.py`): define `embed(card: dict) -> dict` returning any of `title`, `description`, `url`, `thumbnail`, `image`, `color` (int), `footer` (`{"text": ..., "icon_url": ...}`). Only fields declared on `PergamonEmbed` in `src/py.rs` reach Discord — e.g. `games/netrunner.py` sets a `field` tuple that is currently silently dropped. To support a new embed property, add it to `PergamonEmbed` and its `From` impl.
 
-**DB schema** (created by the loader): `cards(id identity PK, game TEXT, title TEXT, card JSONB)`. `card` is the raw upstream JSON for the card, so game scripts depend on the source dataset's field names (e.g. Netrunner's `type_code`, `faction_code`, `pack_code`).
+**DB schema** (owned by `migrations/`, applied by `sqlx::migrate!()` in `src/lib.rs` at startup; see the `add-migration` skill):
+- `games(id PK, name, source, active_dataset_id)`: one row per game; `id` is the short id used in `cards.game` and `games/<id>.py`.
+- `datasets(id, game_id, source_ref, fetched_at, loaded_at, snapshot_path, content_hash, card_count, added, changed, removed)`: one row per load that changed something. Rows adopted from before versioning belong to a `legacy` dataset.
+- `cards(id, game, source_id, title, card JSONB, added_in, changed_in)`: the current version of each card only, `UNIQUE(game, source_id)`. `card` is the upstream JSON for the card (for Netrunner, the raw record), so game scripts depend on the source dataset's field names (e.g. Netrunner's `type_code`, `faction_code`, `pack_code`).
+- `card_revisions(id, game, source_id, title, card, valid_from, replaced_in, removed)`: superseded or removed versions only, so unchanged cards are never copied. Nothing writes to it until the ingest `load` step lands.
+
+The Netrunner loader (`data/netrunner/load_data.py`) predates this schema and will fail against it (it does not set `source_id`, `added_in` or `changed_in`); it is replaced by the ingest pipeline (tracking issue #42), so don't use it to reload data until then.
 
 ## Legacy / in-transition code
 
@@ -63,6 +69,7 @@ The project recently migrated card scripts from Rune to Python:
 ## Conventions and workflow
 
 - Project skills live in `.claude/skills/`:
+  - `add-migration`: adds a sqlx migration for a schema change and tests it on a throwaway database
   - `commit`: runs checks and commits in the repo's message style
   - `issue`: plans a single (non-tracking) issue for approval, then implements it on its own branch and draft PR, addresses feedback with fixup commits, and on approval squashes them and marks the PR ready
   - `tracking-issue`: drafts a tracking issue for approval when none exists, plans it into sub-issues, then works through them one at a time on one branch and PR (draft, plan, step, approve, fixups, before merging)
