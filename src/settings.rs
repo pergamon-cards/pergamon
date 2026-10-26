@@ -45,7 +45,7 @@ impl Settings {
     pub fn from_sources(path: &str, env: HashMap<String, String>) -> Result<Self, ConfigError> {
         Config::builder()
             .add_source(File::with_name(path))
-            .add_source(Environment::with_prefix("PERGAMON").source(Some(env)))
+            .add_source(Environment::with_prefix("PERGAMON").prefix_separator("_").separator("__").source(Some(env)))
             .build()?
             .try_deserialize()
     }
@@ -127,11 +127,23 @@ max_connections = 5
     }
 
     #[test]
-    fn nested_env_override_needs_a_separator() {
+    fn nested_env_override_uses_a_double_underscore() {
         let path = config_file("env-nested", FILE);
 
-        // with the default (no) separator, the key does not reach [database]
-        let settings = Settings::from_sources(&path, env(&[("PERGAMON_DATABASE__HOST", "db.example.com")])).unwrap();
+        let settings =
+            Settings::from_sources(&path, env(&[("PERGAMON_DATABASE__HOST", "db.example.com"), ("PERGAMON_DATABASE__PORT", "6543")]))
+                .unwrap();
+
+        assert_eq!(settings.database.host, "db.example.com");
+        assert_eq!(settings.database.port, 6543);
+        assert_eq!(settings.database.username, "postgres");
+    }
+
+    #[test]
+    fn single_underscore_does_not_reach_a_nested_key() {
+        let path = config_file("env-single", FILE);
+
+        let settings = Settings::from_sources(&path, env(&[("PERGAMON_DATABASE_HOST", "db.example.com")])).unwrap();
 
         assert_eq!(settings.database.host, "localhost");
     }
