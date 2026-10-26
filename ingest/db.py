@@ -4,6 +4,9 @@ import os
 import tomllib
 from pathlib import Path
 
+import psycopg
+from psycopg.conninfo import make_conninfo
+
 REPO_DIR = Path(__file__).resolve().parents[1]
 KEYS = ["host", "port", "username", "password", "database", "max_connections"]
 
@@ -26,5 +29,11 @@ def load_settings(config_dir: Path = REPO_DIR / "config", env: dict[str, str] | 
 
 def conninfo(database: dict) -> str:
     """A libpq connection string for psycopg."""
-    parts = {"host": "host", "port": "port", "dbname": "database", "user": "username", "password": "password"}
-    return " ".join(f"{k}={database[v]}" for k, v in parts.items() if v in database)
+    keys = {"host": "host", "port": "port", "dbname": "database", "user": "username", "password": "password"}
+    return make_conninfo(**{k: database[v] for k, v in keys.items() if v in database})
+
+
+def connect(database: dict | None = None, schema: str | None = None) -> psycopg.Connection:
+    """Opens a connection with the settings from `load_settings()`; `schema` sets the search path (the tests use a throwaway one)."""
+    options = f"-csearch_path={schema}" if schema else None
+    return psycopg.connect(conninfo(database or load_settings()), options=options)
