@@ -6,7 +6,8 @@ def embed(card):
     
     embed["url"] = "https://netrunnerdb.com/en/card/" + card["code"]
     
-    embed["thumbnail"] = "https://card-images.netrunnerdb.com/v2/large/" + card["code"] + ".jpg"
+    if card.get("image_url"):
+        embed["thumbnail"] = card["image_url"]
     
     print(embed)
     

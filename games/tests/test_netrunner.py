@@ -1,4 +1,3 @@
-import glob
 import json
 import re
 
@@ -8,7 +7,6 @@ from conftest import REPO_DIR, load_game
 
 netrunner = load_game("netrunner")
 
-DATASET_GLOB = str(REPO_DIR / "data/netrunner/netrunner-cards-json/pack/*.json")
 
 # Discord's embed limits, mirroring the constants in src/py.rs.
 MAX_TITLE = 256
@@ -138,6 +136,9 @@ CARDS = {
     "01092": {"code": "01092", "title": "SanSan City Grid", "type_code": "upgrade", "faction_code": "nbn", "pack_code": "core", "position": 92, "text": "Each agenda in the root of this server gets −1 advancement requirement.\nLimit 1 <strong>region</strong> per server.", "keywords": "Region", "cost": 6, "trash_cost": 5, "faction_cost": 3},
 }  # fmt: skip
 
+for _code, _card in CARDS.items():
+    _card["image_url"] = f"https://card-images.netrunnerdb.com/v2/large/{_code}.jpg"
+
 GOLDEN = {
     "01001": ("Identity: G-mod • 45/15 • Link: 0", "Anarch • Core Set #1", 0xFF4500),
     "01003": ("Event: Run - Sabotage • Cost: 2 • Influence: ●●", "Anarch • Core Set #3", 0xFF4500),
@@ -166,6 +167,11 @@ def test_embed_golden(code):
     }
 
 
+def test_card_without_an_image_url_has_no_thumbnail():
+    card = {k: v for k, v in CARDS["01050"].items() if k != "image_url"}
+    assert "thumbnail" not in netrunner.embed(card)
+
+
 # The keys the Rust side accepts, read from `PergamonEmbed` in src/py.rs
 
 
@@ -185,9 +191,23 @@ def test_embed_keys_are_accepted_by_rust(code):
     assert set(netrunner.embed(CARDS[code])) <= rust_embed_keys()
 
 
-# Every card in the dataset (skipped when it is not cloned)
+# Every card in the newest ingest snapshot (skipped when there is none)
 
-DATASET = [card for path in sorted(glob.glob(DATASET_GLOB)) for card in json.load(open(path))]
+def newest_snapshot_cards():
+    """The cards of the newest `python -m ingest fetch netrunner` snapshot, or [] when there is none (or polars is missing)."""
+    try:
+        import polars as pl
+
+        from ingest import snapshot
+    except ImportError:
+        return []
+    snapshots = snapshot.list_snapshots("netrunner", REPO_DIR / "data")
+    if not snapshots:
+        return []
+    return [json.loads(card) for card in pl.read_parquet(snapshots[-1] / "cards.parquet")["card"]]
+
+
+DATASET = newest_snapshot_cards()
 
 # Cards that fail today because of bugs in games/netrunner.py. Listed so the suite stays green;
 # strict xfail turns a fixed card into a failure that reminds us to remove it from here.
@@ -220,7 +240,7 @@ def dataset_param(card):
     return pytest.param(card, id=card["code"], marks=marks)
 
 
-@pytest.mark.skipif(not DATASET, reason="data/netrunner/netrunner-cards-json is not cloned")
+@pytest.mark.skipif(not DATASET, reason="no snapshot: run `python -m ingest fetch netrunner`")
 @pytest.mark.parametrize("card", [dataset_param(c) for c in DATASET])
 def test_dataset_card_renders(card):
     out = netrunner.embed(card)
