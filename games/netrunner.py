@@ -7,18 +7,19 @@ def truncate(text, limit):
     return text[: limit - 1] + "\u2026"
 
 
+def fmt(value, none="X"):
+    """A card number as text; null (an X cost, no strength...) shows as `none`."""
+    return none if value is None else str(value)
+
+
 def embed(card):
     embed = {}
-    print("foo")
-    
     embed["title"] = card["title"]
     
     embed["url"] = "https://netrunnerdb.com/en/card/" + card["code"]
     
     if card.get("image_url"):
         embed["thumbnail"] = card["image_url"]
-    
-    print(embed)
     
     type_code = card["type_code"];
     field_header_string = ""
@@ -31,11 +32,11 @@ def embed(card):
     else:
         field_header_string = card_header(card)
         
-    print(embed)
-    
     # card_text = discord_replace(card["text"]);
-    card_text = card["text"]
-    embed["fields"] = [{"name": field_header_string, "value": truncate(card_text, MAX_FIELD_VALUE)}]
+    card_text = card.get("text") or ""
+    # Discord rejects an empty field value, so a card without text gets no field
+    if card_text:
+        embed["fields"] = [{"name": field_header_string, "value": truncate(card_text, MAX_FIELD_VALUE)}]
     
     faction_code = card["faction_code"]
     embed["footer"] = ({ "text" : \
@@ -48,8 +49,6 @@ def embed(card):
     
     embed["color"] = faction_color(faction_code)
     
-    print(embed)
-    
     return embed
 
 def agenda_header(card):
@@ -60,7 +59,7 @@ def agenda_header(card):
     
     field_header_string += \
         " \u2022 " + \
-        str(card["advancement_cost"]) + \
+        fmt(card.get("advancement_cost")) + \
         "/" + \
         str(card["agenda_points"])
     
@@ -74,14 +73,14 @@ def ice_header(card):
     
     field_header_string += \
         " \u2022 Rez: " + \
-        str(card["cost"]) + \
+        fmt(card.get("cost")) + \
         " \u2022 Strength: " + \
-        str(card["strength"])
+        fmt(card.get("strength"))
     
     if "trash_cost" in card.keys():
-        field_header_string += " \u2022 Trash: " + str(card["trash_cost"])
+        field_header_string += " \u2022 Trash: " + fmt(card["trash_cost"])
     
-    faction_cost = card["faction_cost"]
+    faction_cost = card.get("faction_cost") or 0
     if faction_cost > 0:
         field_header_string += \
             " \u2022 Influence: " + \
@@ -99,7 +98,7 @@ def identity_header(card):
         " \u2022 " + \
         str(card["minimum_deck_size"]) + \
         "/" + \
-        str(card["influence_limit"])
+        fmt(card.get("influence_limit"), "\u221e")
         
     if "base_link" in card.keys():
         field_header_string += " \u2022 Link: " + str(card["base_link"])
@@ -114,12 +113,12 @@ def card_header(card):
         
     field_header_string += \
         " \u2022 Cost: " + \
-        str(card["cost"])
+        fmt(card.get("cost"))
         
     if "trash_cost" in card.keys():
-        field_header_string += " \u2022 Trash: " + str(card["trash_cost"])
+        field_header_string += " \u2022 Trash: " + fmt(card["trash_cost"])
         
-    faction_cost = card["faction_cost"]
+    faction_cost = card.get("faction_cost") or 0
     
     if faction_cost > 0:
         field_header_string += \
@@ -132,7 +131,6 @@ def influence_string(faction_cost):
     return "".join(["\u25cf" for _ in range(faction_cost)])
 
 def faction_string(code):
-    print("faction string fn")
     match code:
         case "anarch":
             return "Anarch"
@@ -204,7 +202,6 @@ def type_string(code):
             return s
 
 def pack_string(code):
-    print("pack string fn")
     match code:
         case "23s":
             return "Flashpoint (23 Seconds)"

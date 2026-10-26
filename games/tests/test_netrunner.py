@@ -90,10 +90,9 @@ def test_ice_header():
     assert netrunner.ice_header({**card, "faction_cost": 2}).endswith(" • Influence: ●●")
 
 
-@pytest.mark.xfail(strict=True, reason="null strength renders as 'Strength: None'")
 def test_ice_header_null_strength():
     card = {"type_code": "ice", "cost": 4, "strength": None, "faction_cost": 0}
-    assert "None" not in netrunner.ice_header(card)
+    assert netrunner.ice_header(card) == "Ice • Rez: 4 • Strength: X"
 
 
 def test_identity_header():
@@ -103,10 +102,9 @@ def test_identity_header():
     assert netrunner.identity_header({**card, "keywords": "Megacorp"}).startswith("Identity: Megacorp")
 
 
-@pytest.mark.xfail(strict=True, reason="a null influence limit renders as '45/None'")
 def test_identity_header_null_influence_limit():
     card = {"type_code": "identity", "minimum_deck_size": 45, "influence_limit": None}
-    assert "None" not in netrunner.identity_header(card)
+    assert netrunner.identity_header(card) == "Identity • 45/\u221e"
 
 
 def test_card_header():
@@ -116,10 +114,27 @@ def test_card_header():
     assert netrunner.card_header({**card, "trash_cost": 1}) == "Event • Cost: 2 • Trash: 1"
 
 
-@pytest.mark.xfail(strict=True, reason="an X cost is null in the data and renders as 'Cost: None'")
 def test_card_header_x_cost():
     card = {"type_code": "operation", "cost": None, "faction_cost": 0}
-    assert "None" not in netrunner.card_header(card)
+    assert netrunner.card_header(card) == "Operation \u2022 Cost: X"
+
+
+def test_agenda_header_null_advancement_cost():
+    card = {"type_code": "agenda", "advancement_cost": None, "agenda_points": 1}
+    assert netrunner.agenda_header(card) == "Agenda \u2022 X/1"
+
+
+def test_headers_without_faction_cost():
+    assert netrunner.ice_header({"type_code": "ice", "cost": 1, "strength": 1}) == "Ice \u2022 Rez: 1 \u2022 Strength: 1"
+    assert netrunner.card_header({"type_code": "event", "cost": 1}) == "Event \u2022 Cost: 1"
+
+
+@pytest.mark.parametrize("text", [{}, {"text": None}, {"text": ""}])
+def test_card_without_text_has_no_field(text):
+    card = {**{k: v for k, v in CARDS["01050"].items() if k != "text"}, **text}
+    out = netrunner.embed(card)
+    assert "fields" not in out
+    assert out["title"] == "Sure Gamble"
 
 
 # embed(), compared with real cards trimmed to the fields the script reads
@@ -215,19 +230,9 @@ def newest_snapshot_cards():
 
 DATASET = newest_snapshot_cards()
 
-# Cards that fail today because of bugs in games/netrunner.py. Listed so the suite stays green;
+# Cards that fail today because of bugs in games/netrunner.py (none at the moment). Listed so the suite stays green;
 # strict xfail turns a fixed card into a failure that reminds us to remove it from here.
-KNOWN_BAD = {
-    **{code: "'text' is missing from the card and embed() reads card['text']" for code in ["09045", "08100"]},
-    **{
-        code: "a null cost, strength or influence limit renders as 'None'"
-        for code in [
-            "12064", "08035", "01085", "20120", "09020", "00005", "00006", "00007", "00008", "00009", "00010",
-            "00011", "00012", "00013", "35066", "21118", "33039", "24001", "33093", "33118", "33128", "25118",
-            "30076", "30077", "31068", "13002", "06118", "06080",
-        ]
-    },
-}  # fmt: skip
+KNOWN_BAD = {}
 
 
 def strings(value):
@@ -254,7 +259,7 @@ def test_dataset_card_renders(card):
     assert isinstance(out["title"], str) and out["title"]
     assert isinstance(out["color"], int) and 0 <= out["color"] <= 0xFFFFFF
     assert isinstance(out["footer"]["text"], str) and out["footer"]["text"]
-    assert not [s for s in strings(out) if "None" in s]
+    assert not [s for s in strings(out) if re.search(r"\bNone\b", s)]
 
     title = len(out["title"])
     description = len(out.get("description", ""))

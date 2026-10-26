@@ -7,8 +7,8 @@ use regex::Regex;
 // use rune::alloc::prelude::TryClone;
 // use rune::runtime::{Vm, VmResult};
 
-use serenity::all::ChannelId;
-use serenity::builder::{CreateButton, CreateMessage};
+use serenity::all::{ChannelId, UserId};
+use serenity::builder::{CreateAllowedMentions, CreateButton, CreateEmbed, CreateInteractionResponse, CreateMessage};
 use serenity::model::channel::Message;
 
 use sqlx::postgres::PgRow;
@@ -23,7 +23,50 @@ use crate::{
 
 #[poise::command(prefix_command, slash_command)]
 pub async fn lookup(ctx: poise::Context<'_, State, anyhow::Error>, title: String) -> anyhow::Result<()> {
-    run(title, ctx.data(), ctx.serenity_context().clone(), ctx.channel_id()).await
+    // a lookup can wait on a button click or a slow render, longer than Discord's 3 seconds to answer
+    ctx.defer().await?;
+
+    match run(&title, ctx.data(), ctx.serenity_context(), ctx.channel_id(), ctx.author().id).await {
+        Ok(reply) => {
+            ctx.send(reply.into_poise()).await?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = ctx.say("Something went wrong looking that card up").await;
+            Err(e)
+        }
+    }
+}
+
+/// What a lookup answers with. The caller sends it: as the response to a slash command, or as a message in the channel.
+#[derive(Debug)]
+pub enum Reply {
+    Embed(Box<CreateEmbed>),
+    Text(String),
+}
+
+/// Allowed mentions that ping nobody. Every message the bot sends uses it, because replies echo what users typed
+/// (`[[@everyone]]` -> "@everyone not found").
+fn no_mentions() -> CreateAllowedMentions {
+    CreateAllowedMentions::new()
+}
+
+impl Reply {
+    fn into_message(self) -> CreateMessage {
+        match self {
+            Reply::Embed(embed) => CreateMessage::new().embed(*embed),
+            Reply::Text(text) => CreateMessage::new().content(text),
+        }
+        .allowed_mentions(no_mentions())
+    }
+
+    fn into_poise(self) -> poise::CreateReply {
+        match self {
+            Reply::Embed(embed) => poise::CreateReply::default().embed(*embed),
+            Reply::Text(text) => poise::CreateReply::default().content(text),
+        }
+        .allowed_mentions(no_mentions())
+    }
 }
 
 /// A card row as stored in the `cards` table.
@@ -53,11 +96,29 @@ pub enum LookupOutcome {
     Ambiguous(Vec<String>),
 }
 
-/// Returns the (trimmed, non-empty) text of every `[[...]]` in a message.
+/// The most `[[...]]` lookups answered for one message.
+pub const MAX_INLINE_QUERIES: usize = 5;
+
+/// Returns the (trimmed, non-empty) text of the first `MAX_INLINE_QUERIES` `[[...]]` in a message.
 pub fn parse_inline_queries(content: &str) -> Vec<String> {
     static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[\[(?<title_query>.+?)\]\]").expect("Error building regex"));
 
-    RE.captures_iter(content).map(|c| c["title_query"].trim().to_string()).filter(|q| !q.is_empty()).collect()
+    RE.captures_iter(content)
+        .map(|c| c["title_query"].trim().to_string())
+        .filter(|q| !q.is_empty())
+        .take(MAX_INLINE_QUERIES)
+        .collect()
+}
+
+/// The queries to look up for a message: none when a bot wrote it, so the bot never answers bots or itself.
+pub fn queries_for_message(author_is_bot: bool, content: &str) -> Vec<String> {
+    if author_is_bot { Vec::new() } else { parse_inline_queries(content) }
+}
+
+/// The query without surrounding whitespace, or `None` when nothing is left to look up.
+pub fn normalize_query(query: &str) -> Option<&str> {
+    let query = query.trim();
+    if query.is_empty() { None } else { Some(query) }
 }
 
 /// Escapes `\`, `%` and `_` so user text matches literally in a `LIKE` pattern.
@@ -88,11 +149,11 @@ pub fn resolve(rows: Vec<CardRow>) -> LookupOutcome {
     }
 }
 
-/// Cards whose title starts with `query`, oldest first.
+/// Cards whose title starts with `query` (ignoring case), oldest first.
 pub async fn find_cards(pool: &PgPool, query: &str) -> anyhow::Result<Vec<CardRow>> {
     let pattern = format!("{}%", escape_like(query));
 
-    let rows = sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE $1 ORDER BY id LIMIT 10")
+    let rows = sqlx::query("SELECT game, title, card FROM cards WHERE title ILIKE $1 ORDER BY id LIMIT 10")
         .bind(pattern)
         .fetch_all(pool)
         .await?;
@@ -110,110 +171,90 @@ pub async fn find_exact(pool: &PgPool, title: &str) -> anyhow::Result<Option<Car
     Ok(row.as_ref().map(CardRow::from_row).transpose()?)
 }
 
-/// The message with one button per title; a button's custom id is the title.
+/// Longest button label Discord accepts, in characters.
+const MAX_BUTTON_LABEL: usize = 80;
+
+/// `s` cut to at most `limit` characters, with `…` as the last one when it was cut.
+fn truncate_label(s: &str, limit: usize) -> String {
+    if s.chars().count() <= limit {
+        return s.to_string();
+    }
+    s.chars().take(limit - 1).chain(std::iter::once('\u{2026}')).collect()
+}
+
+/// The message with one button per title. A button's custom id is the title's index (a title can be longer
+/// than the 100 characters a custom id allows) and its label is the title, cut to fit.
 pub fn disambiguation_message(titles: &[String]) -> CreateMessage {
-    titles.iter().fold(CreateMessage::new().content("Please select the card you're looking for"), |msg, t| {
-        msg.button(CreateButton::new(t).label(t))
-    })
+    titles
+        .iter()
+        .enumerate()
+        .fold(CreateMessage::new().content("Please select the card you're looking for"), |msg, (i, t)| {
+            msg.button(CreateButton::new(i.to_string()).label(truncate_label(t, MAX_BUTTON_LABEL)))
+        })
+        .allowed_mentions(no_mentions())
 }
 
 pub async fn lookup_inline(state: &State, ctx: serenity::all::Context, msg: Message) {
-    for query in parse_inline_queries(&msg.content) {
+    for query in queries_for_message(msg.author.bot, &msg.content) {
         info!("Captured card lookup for {query} from message");
 
-        if let Err(e) = run(query, state, ctx.clone(), msg.channel_id).await {
-            error!("{e}");
+        match run(&query, state, &ctx, msg.channel_id, msg.author.id).await {
+            Ok(reply) => {
+                let _ = msg
+                    .channel_id
+                    .send_message(&ctx.http, reply.into_message())
+                    .await
+                    .inspect_err(|e| error!("Error sending message to Discord: {e}"));
+            }
+            Err(e) => error!("{e}"),
         }
     }
 }
 
-async fn run(query: String, state: &State, ctx: serenity::all::Context, channel_id: ChannelId) -> anyhow::Result<()> {
-    let entry = match resolve(find_cards(&state.database, &query).await?) {
+/// Looks up `query`, asking `requester` to pick when several titles match, and returns what to answer with.
+async fn run(query: &str, state: &State, ctx: &serenity::all::Context, channel_id: ChannelId, requester: UserId) -> anyhow::Result<Reply> {
+    let Some(query) = normalize_query(query) else {
+        return Ok(Reply::Text("Please give a card name to look up".into()));
+    };
+
+    let entry = match resolve(find_cards(&state.database, query).await?) {
         LookupOutcome::NotFound => None,
         LookupOutcome::Found(row) => Some(row),
         LookupOutcome::Ambiguous(titles) => {
-            let m = channel_id.send_message(&ctx, disambiguation_message(&titles)).await?;
+            let m = channel_id.send_message(ctx, disambiguation_message(&titles)).await?;
 
-            let interaction = match m.await_component_interaction(&ctx.shard).timeout(Duration::from_secs(60 * 3)).await {
-                Some(x) => Some(x),
-                None => {
-                    let _ = m.reply(&ctx, "Timed out").await;
-                    None
-                }
-            };
+            // only the person who asked can pick
+            let interaction = m.await_component_interaction(&ctx.shard).author_id(requester).timeout(Duration::from_secs(60 * 3)).await;
 
-            m.delete(&ctx).await.unwrap();
+            if let Some(interaction) = &interaction {
+                let _ = interaction
+                    .create_response(ctx, CreateInteractionResponse::Acknowledge)
+                    .await
+                    .inspect_err(|e| error!("Error acknowledging button click: {e}"));
+            }
+
+            // the picker is only clutter once answered or timed out; failing to remove it (missing permission, already deleted) is not fatal
+            let _ = m.delete(ctx).await.inspect_err(|e| error!("Error deleting the disambiguation message: {e}"));
 
             match interaction {
-                Some(interaction) => find_exact(&state.database, &interaction.data.custom_id).await?,
-                None => return Ok(()),
+                Some(interaction) => match interaction.data.custom_id.parse::<usize>().ok().and_then(|i| titles.get(i)) {
+                    Some(title) => find_exact(&state.database, title).await?,
+                    None => None,
+                },
+                None => return Ok(Reply::Text("Timed out".into())),
             }
         }
     };
 
-    if let Some(row) = entry {
-        let embed = get_embed(Path::new("games"), &row.game, &row.card)?;
-        validate_embed(&embed)?;
-        let embed = embed.into();
-        println!("{embed:?}");
-        // create discord message with embed and send
-        let builder = CreateMessage::new().embed(embed);
-        let _msg = channel_id.send_message(&ctx.http, builder).await.inspect_err(|e| error!("Error sending message to Discord: {e}"))?;
-
-    //         let card = row.get::<String, _>("card"); // get json data as string (for rune reasons)
-    //         let game = row.get::<String, _>("game");
-    //
-    //         // build rune vm
-    //         let vm = Vm::new(state.runtime.clone(), state.unit.clone());
-    //
-    //         // create execution struct, i.e. rune function call
-    //         let execution = vm.try_clone().unwrap().send_execute([&game, "embed"], (card,))?;
-    //
-    //         // run in separate thread
-    //         let _ = tokio::spawn(async move {
-    //             // run rune function
-    //             let output = match execution.async_complete().await {
-    //                 VmResult::Ok(out) => out,
-    //                 VmResult::Err(e) => {
-    //                     error!("Error running rune function: {e}");
-    //                     return;
-    //                 }
-    //             };
-    //
-    //             // convert rune value into module struct
-    //             let output: rune::runtime::Object = match rune::from_value(output) {
-    //                 Ok(out) => out,
-    //                 Err(e) => {
-    //                     error!("Error converting from rune value to rune object: {e}");
-    //                     return;
-    //                 }
-    //             };
-    //
-    //             // convert module struct into serenity discord embed
-    //             let embed = match scripting::try_from_rune_object_to_embed(output) {
-    //                 Ok(em) => em,
-    //                 Err(e) => {
-    //                     error!("Error creating embed from script: {e}");
-    //                     return;
-    //                 }
-    //             };
-    //
-    //             // create discord message with embed and send
-    //             let builder = CreateMessage::new().embed(embed);
-    //             let _msg = match channel_id.send_message(&ctx.http, builder).await {
-    //                 Ok(msg) => msg,
-    //                 Err(e) => {
-    //                     error!("Error sending message to Discord: {e}");
-    //                     return;
-    //                 }
-    //             };
-    //         });
-    } else {
-        let builder = CreateMessage::new().content(format!("{query} not found"));
-        let _msg = channel_id.send_message(&ctx.http, builder).await?;
+    match entry {
+        Some(row) => {
+            let embed = get_embed(Path::new("games"), &row.game, &row.card)?;
+            validate_embed(&embed)?;
+            let embed = embed.into();
+            Ok(Reply::Embed(Box::new(embed)))
+        }
+        None => Ok(Reply::Text(format!("{query} not found"))),
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -252,6 +293,24 @@ mod tests {
     }
 
     #[test]
+    fn parse_stops_at_the_cap() {
+        let content: String = (1..=7).map(|i| format!("[[Card {i}]] ")).collect();
+
+        let queries = parse_inline_queries(&content);
+
+        assert_eq!(queries.len(), MAX_INLINE_QUERIES);
+        assert_eq!(queries.first().map(String::as_str), Some("Card 1"));
+        assert_eq!(queries.last().map(String::as_str), Some("Card 5"));
+    }
+
+    #[test]
+    fn parse_cap_ignores_empty_queries() {
+        let content = format!("[[]] {}", (1..=6).map(|i| format!("[[Card {i}]]")).collect::<String>());
+
+        assert_eq!(parse_inline_queries(&content).len(), MAX_INLINE_QUERIES);
+    }
+
+    #[test]
     fn parse_skips_empty_queries() {
         assert!(parse_inline_queries("[[]]").is_empty());
         assert!(parse_inline_queries("[[   ]]").is_empty());
@@ -268,6 +327,54 @@ mod tests {
     #[test]
     fn parse_does_not_span_lines() {
         assert!(parse_inline_queries("[[Hedge\nFund]]").is_empty());
+    }
+
+    #[test]
+    fn bot_messages_are_ignored() {
+        assert!(queries_for_message(true, "[[Hedge Fund]]").is_empty());
+        assert_eq!(queries_for_message(false, "[[Hedge Fund]]"), ["Hedge Fund"]);
+    }
+
+    #[test]
+    fn normalize_query_trims_and_rejects_empty() {
+        assert_eq!(normalize_query("  Hedge Fund \n"), Some("Hedge Fund"));
+        assert_eq!(normalize_query(""), None);
+        assert_eq!(normalize_query(" \t\n "), None);
+    }
+
+    #[test]
+    fn text_reply_becomes_message_content() {
+        let value = serde_json::to_value(Reply::Text("Hedge Fund not found".into()).into_message()).unwrap();
+
+        assert_eq!(value["content"], "Hedge Fund not found");
+        assert!(value["embeds"].as_array().is_none_or(|e| e.is_empty()));
+    }
+
+    #[test]
+    fn replies_ping_nobody() {
+        for reply in [
+            Reply::Text("@everyone not found".into()),
+            Reply::Embed(Box::new(CreateEmbed::new())),
+        ] {
+            let value = serde_json::to_value(reply.into_message()).unwrap();
+
+            assert_eq!(value["allowed_mentions"]["parse"], json!([]));
+        }
+    }
+
+    #[test]
+    fn disambiguation_message_pings_nobody() {
+        let value = serde_json::to_value(disambiguation_message(&["@everyone".to_string()])).unwrap();
+
+        assert_eq!(value["allowed_mentions"]["parse"], json!([]));
+    }
+
+    #[test]
+    fn embed_reply_becomes_one_embed() {
+        let value = serde_json::to_value(Reply::Embed(Box::new(CreateEmbed::new().title("Hedge Fund"))).into_message()).unwrap();
+
+        assert_eq!(value["embeds"][0]["title"], "Hedge Fund");
+        assert!(value["content"].is_null());
     }
 
     #[test]
@@ -322,8 +429,25 @@ mod tests {
         assert_eq!(buttons.len(), 3);
         for (button, title) in buttons.iter().zip(&titles) {
             assert_eq!(button["label"], title.as_str());
-            assert_eq!(button["custom_id"], title.as_str());
         }
+        let ids: Vec<_> = buttons.iter().map(|b| b["custom_id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["0", "1", "2"]);
+    }
+
+    #[test]
+    fn disambiguation_message_cuts_long_titles_to_fit_discord() {
+        let long = "x".repeat(150);
+        let titles = vec![long.clone(), "é".repeat(80), "é".repeat(81)];
+
+        let value = serde_json::to_value(disambiguation_message(&titles)).unwrap();
+
+        let buttons: Vec<_> = value["components"].as_array().unwrap().iter().flat_map(|r| r["components"].as_array().unwrap()).collect();
+        let labels: Vec<&str> = buttons.iter().map(|b| b["label"].as_str().unwrap()).collect();
+        assert_eq!(labels[0].chars().count(), 80);
+        assert!(labels[0].ends_with('\u{2026}'));
+        assert_eq!(labels[1], "é".repeat(80));
+        assert_eq!(labels[2].chars().count(), 80);
+        assert!(buttons.iter().all(|b| b["custom_id"].as_str().unwrap().len() <= 100));
     }
 
     #[test]
