@@ -60,6 +60,8 @@ pub async fn run() -> Result<()> {
         .await
         .inspect_err(|e| tracing::error!("{}", e.to_string()))?;
 
+    sqlx::migrate!().run(&database).await.inspect_err(|e| tracing::error!("migrations failed: {e}"))?;
+
     let state = State { database };
 
     let framework = poise::Framework::builder()

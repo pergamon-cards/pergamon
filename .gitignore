@@ -1,7 +1,5 @@
-data/*
-!data/netrunner/
-data/netrunner/*
-!data/netrunner/*.py
+data/
 target/
 *.DS_Store
 /target
+__pycache__/
