@@ -51,8 +51,8 @@ Logging uses `tracing` with `RUST_LOG`-style filtering (default `pergamon=debug`
 ## Architecture
 
 Request flow:
-1. A lookup is triggered either by the `/lookup <title>` slash/prefix command, or inline by any message containing `[[card name]]` (handled in `event_handler` in `src/main.rs` → `commands::lookup_inline`). Slash commands must be registered once via the `register` prefix command.
-2. `src/commands/lookup.rs::run` queries `cards` with `title LIKE '<query>%'`. If multiple distinct titles match, it posts buttons and waits (3 min) for a component interaction to disambiguate.
+1. A lookup is triggered either by the `/lookup <title>` slash/prefix command, or inline by a message containing `[[card name]]` (handled in `event_handler` in `src/lib.rs` → `commands::lookup_inline`; at most 5 per message, and messages written by bots are ignored). The slash command defers first. Slash commands must be registered once via the `register` prefix command.
+2. `src/commands/lookup.rs::run` rejects an empty query, then queries `cards` with a case-insensitive, escaped prefix match (`title ILIKE '<query>%'`). If multiple distinct titles match, it posts buttons and waits (3 min) for the requester (only) to pick one. It returns a `Reply` (embed or text) that the caller sends: as the command response for slash commands, as a channel message for inline lookups. Every message the bot sends disables mention parsing.
 3. The row's `game` column selects `games/{game}.py`; `src/py.rs::get_embed` reads the file **on every lookup** (so script edits take effect without recompiling), executes it with pyo3, and calls its `embed(card)` function with the card's JSONB converted to a Python dict.
 4. The returned dict is depythonized into `PergamonEmbed` and converted to a serenity `CreateEmbed`.
 
