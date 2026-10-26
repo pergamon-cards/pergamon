@@ -15,7 +15,14 @@ cargo fmt                 # rustfmt.toml: max_width 140, edition 2024
 cargo clippy
 ```
 
-There are no tests yet.
+Tests:
+
+```bash
+pip install -r games/requirements-dev.txt     # once, ideally in a venv
+python -m pytest games                        # game script tests in games/tests/
+```
+
+The pytest suite also renders every card in `data/netrunner/netrunner-cards-json` (skipped if it is not cloned). Cards that fail today because of bugs in `games/netrunner.py` are listed in `KNOWN_BAD` as strict `xfail`; when you fix one, pytest fails until you remove it from the list.
 
 Loading card data (Netrunner): clone https://github.com/Null-Signal-Games/netrunner-cards-json into `data/netrunner/netrunner-cards-json`, then run the loader **from `data/netrunner/`** (it resolves the JSON dir from cwd; needs `psycopg`):
 
@@ -62,7 +69,7 @@ The project recently migrated card scripts from Rune to Python:
   - `commit`: runs checks and commits in the repo's message style
   - `issue`: plans a single (non-tracking) issue for approval, then implements it on its own branch and draft PR, addresses feedback with fixup commits, and on approval squashes them and marks the PR ready
   - `tracking-issue`: plans a user-written tracking issue into sub-issues, then works through them one at a time on one branch and PR (plan, step, approve, fixups, before merging)
-- Before committing, run `cargo fmt`, `cargo clippy --all-targets` and `cargo test` for Rust changes. Fix every clippy warning or error, and ask the user about any that need a decision, and `deno task build`, `deno task lint`, `deno task test` and `deno task fmt:check` for frontend changes. Don't run the `#[ignore]`d live tests.
+- Before committing, run `cargo fmt`, `cargo clippy --all-targets` and `cargo test` for Rust changes. For changes to `games/*.py`, also run `python -m pytest games`. Fix every clippy warning or error, and ask the user about any that need a decision, and `deno task build`, `deno task lint`, `deno task test` and `deno task fmt:check` for frontend changes. Don't run the `#[ignore]`d live tests.
 - Rust modules with submodules use the `mod.rs` layout: `foo/mod.rs` plus `foo/bar.rs`, never `foo.rs` next to a `foo/` directory. A module without submodules stays a single `foo.rs`; when it gains its first submodule, move it to `foo/mod.rs` (with `git mv`).
 - Commit messages are one lowercase line, past tense, no prefix, ending with the number of the issue the commit works on in parentheses (for example "added user timeline endpoint and frontend types (#42)"). In a tracking issue's flow that is the sub-issue, not the tracking issue or the PR. Merge commits are exempt. If no issue is known, ask the user for one; never omit it or use the PR number. The attribution trailer stays last in the body.
 - `.env` and `*.db` are gitignored. `Cargo.lock` and `deno.lock` are committed.
