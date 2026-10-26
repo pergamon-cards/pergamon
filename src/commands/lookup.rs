@@ -209,7 +209,8 @@ async fn run(query: &str, state: &State, ctx: &serenity::all::Context, channel_i
                     .inspect_err(|e| error!("Error acknowledging button click: {e}"));
             }
 
-            m.delete(ctx).await.unwrap();
+            // the picker is only clutter once answered or timed out; failing to remove it (missing permission, already deleted) is not fatal
+            let _ = m.delete(ctx).await.inspect_err(|e| error!("Error deleting the disambiguation message: {e}"));
 
             match interaction {
                 Some(interaction) => find_exact(&state.database, &interaction.data.custom_id).await?,
