@@ -8,7 +8,7 @@ use regex::Regex;
 // use rune::runtime::{Vm, VmResult};
 
 use serenity::all::{ChannelId, UserId};
-use serenity::builder::{CreateButton, CreateEmbed, CreateMessage};
+use serenity::builder::{CreateButton, CreateEmbed, CreateInteractionResponse, CreateMessage};
 use serenity::model::channel::Message;
 
 use sqlx::postgres::PgRow;
@@ -188,7 +188,7 @@ pub async fn lookup_inline(state: &State, ctx: serenity::all::Context, msg: Mess
 }
 
 /// Looks up `query`, asking `requester` to pick when several titles match, and returns what to answer with.
-async fn run(query: &str, state: &State, ctx: &serenity::all::Context, channel_id: ChannelId, _requester: UserId) -> anyhow::Result<Reply> {
+async fn run(query: &str, state: &State, ctx: &serenity::all::Context, channel_id: ChannelId, requester: UserId) -> anyhow::Result<Reply> {
     let Some(query) = normalize_query(query) else {
         return Ok(Reply::Text("Please give a card name to look up".into()));
     };
@@ -199,7 +199,15 @@ async fn run(query: &str, state: &State, ctx: &serenity::all::Context, channel_i
         LookupOutcome::Ambiguous(titles) => {
             let m = channel_id.send_message(ctx, disambiguation_message(&titles)).await?;
 
-            let interaction = m.await_component_interaction(&ctx.shard).timeout(Duration::from_secs(60 * 3)).await;
+            // only the person who asked can pick
+            let interaction = m.await_component_interaction(&ctx.shard).author_id(requester).timeout(Duration::from_secs(60 * 3)).await;
+
+            if let Some(interaction) = &interaction {
+                let _ = interaction
+                    .create_response(ctx, CreateInteractionResponse::Acknowledge)
+                    .await
+                    .inspect_err(|e| error!("Error acknowledging button click: {e}"));
+            }
 
             m.delete(ctx).await.unwrap();
 
