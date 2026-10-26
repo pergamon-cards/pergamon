@@ -209,7 +209,7 @@ async fn run(query: String, state: &State, ctx: serenity::all::Context, channel_
     //             };
     //         });
     } else {
-        let builder = CreateMessage::new().content(&format!("{query} not found"));
+        let builder = CreateMessage::new().content(format!("{query} not found"));
         let _msg = channel_id.send_message(&ctx.http, builder).await?;
     }
 

@@ -53,7 +53,9 @@ impl Settings {
     pub fn new_global() -> Result<(), ConfigError> {
         let s = Settings::new()?;
 
-        Ok(SETTINGS.set(s).unwrap())
+        SETTINGS.set(s).unwrap();
+
+        Ok(())
     }
 
     pub fn global() -> &'static Self {
