@@ -56,7 +56,7 @@ Request flow:
 3. The row's `game` column selects `games/{game}.py`; `src/py.rs::get_embed` reads the file **on every lookup** (so script edits take effect without recompiling), executes it with pyo3, and calls its `embed(card)` function with the card's JSONB converted to a Python dict.
 4. The returned dict is depythonized into `PergamonEmbed` and converted to a serenity `CreateEmbed`.
 
-**Game script contract** (`games/<game>.py`): define `embed(card: dict) -> dict` returning any of `title`, `description`, `url`, `thumbnail`, `image`, `color` (int), `footer` (`{"text": ..., "icon_url": ...}`). Only fields declared on `PergamonEmbed` in `src/py.rs` reach Discord — e.g. `games/netrunner.py` sets a `field` tuple that is currently silently dropped. To support a new embed property, add it to `PergamonEmbed` and its `From` impl.
+**Game script contract** (`games/<game>.py`): define `embed(card: dict) -> dict` returning any of `title`, `description`, `url`, `thumbnail`, `image`, `color` (int), `fields` (`[{"name", "value", "inline"?}]`, `inline` defaults to false), `footer` (`{"text": ..., "icon_url": ...}`). Only keys declared on `PergamonEmbed` in `src/py.rs` reach Discord; unknown keys are silently dropped. Discord's limits (25 fields, name ≤ 256, value ≤ 1024, 6000 characters in total) are checked by `validate_embed`; a script keeps its values within them (`games/netrunner.py` truncates card text with `…`). To support a new embed property, add it to `PergamonEmbed` and its `From` impl.
 
 **DB schema** (owned by `migrations/`, applied by `sqlx::migrate!()` in `src/lib.rs` at startup; see the `add-migration` skill):
 - `games(id PK, name, source, active_dataset_id)`: one row per game; `id` is the short id used in `cards.game` and `games/<id>.py`.

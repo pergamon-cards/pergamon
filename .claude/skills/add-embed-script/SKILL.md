@@ -10,7 +10,7 @@ description: Write or change a game's embed script (games/<id>.py) and its tests
 ## Steps
 
 1. **Know the cards.** Open the newest snapshot (`data/<id>/snapshots/*/cards.parquet`, via polars) and look at the field names across card types, which fields are sometimes missing or null, and the longest texts. Read `games/netrunner.py` as the example (and its `KNOWN_BAD` list in `games/tests/test_netrunner.py` for the kinds of bugs to avoid: a null cost printed as `None`, a missing `text`).
-2. **Check what the Rust side accepts.** Only fields declared on `PergamonEmbed` in `src/py.rs` reach Discord: `color`, `description`, `footer`, `image`, `thumbnail`, `title`, `url`. If the design needs something else (for example `fields`), **stop**: tell the user, and propose the `src/py.rs` change as its own issue or sub-issue (it applies to every game). Don't set keys the Rust side drops.
+2. **Check what the Rust side accepts.** Only fields declared on `PergamonEmbed` in `src/py.rs` reach Discord: `color`, `description`, `fields`, `footer`, `image`, `thumbnail`, `title`, `url`. If the design needs something else (for example `author`), **stop**: tell the user, and propose the `src/py.rs` change as its own issue or sub-issue (it applies to every game). Don't set keys the Rust side drops.
 3. **Settle the design with the user** if it is not obvious: what goes in the title, description and footer, the colour scheme, how rich text and symbols are rendered.
 4. **Write `games/<id>.py`.**
    - Use `.get()` for fields that can be missing, and never let `None` reach a string.

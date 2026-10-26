@@ -161,10 +161,17 @@ def test_embed_golden(code):
         "title": card["title"],
         "url": f"https://netrunnerdb.com/en/card/{code}",
         "thumbnail": f"https://card-images.netrunnerdb.com/v2/large/{code}.jpg",
-        "field": (header, card["text"]),
+        "fields": [{"name": header, "value": card["text"]}],
         "footer": {"text": footer},
         "color": color,
     }
+
+
+def test_long_card_text_is_truncated_to_the_field_limit():
+    card = {**CARDS["01050"], "text": "x" * 2000}
+    value = netrunner.embed(card)["fields"][0]["value"]
+    assert len(value) == 1024
+    assert value.endswith("\u2026")
 
 
 def test_card_without_an_image_url_has_no_thumbnail():
@@ -185,7 +192,6 @@ def test_rust_embed_keys_are_read():
     assert {"title", "url", "thumbnail", "footer", "color"} <= rust_embed_keys()
 
 
-@pytest.mark.xfail(strict=True, reason="embed() sets 'field', which PergamonEmbed does not accept, so Discord never gets it")
 @pytest.mark.parametrize("code", GOLDEN)
 def test_embed_keys_are_accepted_by_rust(code):
     assert set(netrunner.embed(CARDS[code])) <= rust_embed_keys()

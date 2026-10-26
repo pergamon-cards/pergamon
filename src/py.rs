@@ -11,7 +11,7 @@ pub struct PergamonEmbed {
     // pub author
     pub color: Option<u32>,
     pub description: Option<String>,
-    // pub fields
+    pub fields: Option<Vec<PergamonEmbedField>>,
     pub footer: Option<PergamonEmbedFooter>,
     pub image: Option<String>,
     pub thumbnail: Option<String>,
@@ -19,6 +19,13 @@ pub struct PergamonEmbed {
     pub title: Option<String>,
     pub url: Option<String>,
     // pub attachment
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct PergamonEmbedField {
+    pub name: String,
+    pub value: String,
+    pub inline: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -38,6 +45,11 @@ impl From<PergamonEmbed> for CreateEmbed {
 
         ce = match pe.description {
             Some(x) => ce.description(x),
+            None => ce,
+        };
+
+        ce = match pe.fields {
+            Some(x) => ce.fields(x.into_iter().map(|f| (f.name, f.value, f.inline.unwrap_or(false)))),
             None => ce,
         };
 
@@ -86,15 +98,19 @@ impl From<PergamonEmbedFooter> for CreateEmbedFooter {
 pub const MAX_TITLE: usize = 256;
 pub const MAX_DESCRIPTION: usize = 4096;
 pub const MAX_FOOTER: usize = 2048;
+pub const MAX_FIELDS: usize = 25;
+pub const MAX_FIELD_NAME: usize = 256;
+pub const MAX_FIELD_VALUE: usize = 1024;
 pub const MAX_TOTAL: usize = 6000;
 
 /// Checks an embed against Discord's limits, counting characters as Discord does.
-/// `PergamonEmbed` has no fields yet, so the field-count and field name/value limits are not checked.
 pub fn validate_embed(embed: &PergamonEmbed) -> Result<()> {
     let len = |s: &Option<String>| s.as_deref().map_or(0, |s| s.chars().count());
     let title = len(&embed.title);
     let description = len(&embed.description);
     let footer = embed.footer.as_ref().map_or(0, |f| f.text.chars().count());
+
+    let fields = embed.fields.as_deref().unwrap_or_default();
 
     if title > MAX_TITLE {
         bail!("embed title is {title} characters, the limit is {MAX_TITLE}");
@@ -106,7 +122,25 @@ pub fn validate_embed(embed: &PergamonEmbed) -> Result<()> {
         bail!("embed footer is {footer} characters, the limit is {MAX_FOOTER}");
     }
 
-    let total = title + description + footer;
+    if fields.len() > MAX_FIELDS {
+        bail!("embed has {} fields, the limit is {MAX_FIELDS}", fields.len());
+    }
+    let mut fields_total = 0;
+    for field in fields {
+        let (name, value) = (field.name.chars().count(), field.value.chars().count());
+        if name == 0 || value == 0 {
+            bail!("embed field {:?} has an empty name or value", field.name);
+        }
+        if name > MAX_FIELD_NAME {
+            bail!("embed field name is {name} characters, the limit is {MAX_FIELD_NAME}");
+        }
+        if value > MAX_FIELD_VALUE {
+            bail!("embed field value is {value} characters, the limit is {MAX_FIELD_VALUE}");
+        }
+        fields_total += name + value;
+    }
+
+    let total = title + description + footer + fields_total;
     if total > MAX_TOTAL {
         bail!("embed is {total} characters in total, the limit is {MAX_TOTAL}");
     }
@@ -161,10 +195,19 @@ mod tests {
         }
     }
 
+    fn field(name: &str, value: &str, inline: Option<bool>) -> PergamonEmbedField {
+        PergamonEmbedField {
+            name: name.into(),
+            value: value.into(),
+            inline,
+        }
+    }
+
     fn empty() -> PergamonEmbed {
         PergamonEmbed {
             color: None,
             description: None,
+            fields: None,
             footer: None,
             image: None,
             thumbnail: None,
@@ -178,6 +221,7 @@ mod tests {
         let embed = PergamonEmbed {
             color: Some(0xff4500),
             description: Some("d".into()),
+            fields: Some(vec![field("n", "v", Some(true))]),
             footer: Some(footer("f")),
             image: Some("https://example.com/i.png".into()),
             thumbnail: Some("https://example.com/t.png".into()),
@@ -189,6 +233,9 @@ mod tests {
 
         assert_eq!(value["color"], 0xff4500);
         assert_eq!(value["description"], "d");
+        assert_eq!(value["fields"][0]["name"], "n");
+        assert_eq!(value["fields"][0]["value"], "v");
+        assert_eq!(value["fields"][0]["inline"], true);
         assert_eq!(value["footer"]["text"], "f");
         assert_eq!(value["image"]["url"], "https://example.com/i.png");
         assert_eq!(value["thumbnail"]["url"], "https://example.com/t.png");
@@ -200,9 +247,20 @@ mod tests {
     fn empty_embed_sets_nothing() {
         let value = embed_json(empty());
 
-        for key in ["color", "description", "footer", "image", "thumbnail", "title", "url"] {
+        for key in ["color", "description", "fields", "footer", "image", "thumbnail", "title", "url"] {
             assert!(value.get(key).is_none_or(|v| v.is_null()), "{key} should not be set: {value}");
         }
+    }
+
+    #[test]
+    fn field_inline_defaults_to_false() {
+        let value = embed_json(PergamonEmbed {
+            fields: Some(vec![field("a", "b", None), field("c", "d", Some(true))]),
+            ..empty()
+        });
+
+        assert_eq!(value["fields"][0]["inline"], false);
+        assert_eq!(value["fields"][1]["inline"], true);
     }
 
     #[test]
@@ -240,6 +298,18 @@ def embed(card):
     }
 
     #[test]
+    fn render_reads_fields() {
+        let code = "def embed(card):\n    return {'fields': [{'name': 'n', 'value': 'v'}, {'name': 'a', 'value': 'b', 'inline': True}]}";
+
+        let embed = render_embed(code, "game_9", &json!({})).unwrap();
+        let fields = embed.fields.unwrap();
+
+        assert_eq!(fields.len(), 2);
+        assert_eq!((fields[0].name.as_str(), fields[0].value.as_str(), fields[0].inline), ("n", "v", None));
+        assert_eq!(fields[1].inline, Some(true));
+    }
+
+    #[test]
     fn render_requires_embed_function() {
         assert!(render_embed("x = 1", "game_1", &json!({})).is_err());
     }
@@ -266,7 +336,7 @@ def embed(card):
 
     #[test]
     fn render_ignores_unknown_keys() {
-        let embed = render_embed("def embed(card):\n    return {'title': 't', 'field': ('a', 'b')}", "game_7", &json!({})).unwrap();
+        let embed = render_embed("def embed(card):\n    return {'title': 't', 'author': 'a'}", "game_7", &json!({})).unwrap();
 
         assert_eq!(embed.title.as_deref(), Some("t"));
     }
@@ -331,6 +401,21 @@ def embed(card):
             ..empty()
         };
         assert!(validate_embed(&total).is_ok());
+
+        let fields = |n: usize, name: usize, value: usize| PergamonEmbed {
+            fields: Some((0..n).map(|_| field(&"é".repeat(name), &"é".repeat(value), None)).collect()),
+            ..empty()
+        };
+        assert!(validate_embed(&fields(MAX_FIELDS, 1, 1)).is_ok());
+        assert!(validate_embed(&fields(1, MAX_FIELD_NAME, 1)).is_ok());
+        assert!(validate_embed(&fields(1, 1, MAX_FIELD_VALUE)).is_ok());
+        // fields 5 * (256 + 1024) = 6400 is too much, so 4 * 1280 + title 256 + description 624 = 6000
+        let total = PergamonEmbed {
+            title: text(MAX_TITLE),
+            description: text(624),
+            ..fields(4, MAX_FIELD_NAME, MAX_FIELD_VALUE)
+        };
+        assert!(validate_embed(&total).is_ok());
     }
 
     #[test]
@@ -361,6 +446,22 @@ def embed(card):
             description: text(3745),
             footer: Some(footer(&"é".repeat(2000))),
             ..empty()
+        };
+        assert!(validate_embed(&total).is_err());
+
+        let fields = |n: usize, name: usize, value: usize| PergamonEmbed {
+            fields: Some((0..n).map(|_| field(&"é".repeat(name), &"é".repeat(value), None)).collect()),
+            ..empty()
+        };
+        assert!(validate_embed(&fields(MAX_FIELDS + 1, 1, 1)).is_err());
+        assert!(validate_embed(&fields(1, MAX_FIELD_NAME + 1, 1)).is_err());
+        assert!(validate_embed(&fields(1, 1, MAX_FIELD_VALUE + 1)).is_err());
+        assert!(validate_embed(&fields(1, 0, 1)).is_err());
+        assert!(validate_embed(&fields(1, 1, 0)).is_err());
+        let total = PergamonEmbed {
+            title: text(MAX_TITLE),
+            description: text(625),
+            ..fields(4, MAX_FIELD_NAME, MAX_FIELD_VALUE)
         };
         assert!(validate_embed(&total).is_err());
     }
