@@ -63,13 +63,10 @@ The project recently migrated card scripts from Rune to Python:
 ## Conventions and workflow
 
 - Project skills live in `.claude/skills/`:
-  - `add-endpoint`: new backend routes
-  - `add-migration`: schema changes
-  - `add-loader-command`: new data-loader subcommands or flags
-  - `add-frontend-page`: new frontend routes
   - `commit`: runs checks and commits in the repo's message style
   - `issue`: plans a single (non-tracking) issue for approval, then implements it on its own branch and draft PR, addresses feedback with fixup commits, and on approval squashes them and marks the PR ready
-  - `tracking-issue`: plans a user-written tracking issue into sub-issues, then works through them one at a time on one branch and PR (plan, step, approve, fixups, before merging)
+  - `tracking-issue`: drafts a tracking issue for approval when none exists, plans it into sub-issues, then works through them one at a time on one branch and PR (draft, plan, step, approve, fixups, before merging)
+- Work that splits into two or more logically related issues always goes through `tracking-issue`, never several standalone `issue` flows. If no tracking issue exists yet, draft one with its Draft mode; this applies when Claude is the one proposing the split too.
 - Before committing, run `cargo fmt`, `cargo clippy --all-targets` and `cargo test` for Rust changes. For changes to `games/*.py`, also run `python -m pytest games`. Fix every clippy warning or error, and ask the user about any that need a decision, and `deno task build`, `deno task lint`, `deno task test` and `deno task fmt:check` for frontend changes. Don't run the `#[ignore]`d live tests.
 - Rust modules with submodules use the `mod.rs` layout: `foo/mod.rs` plus `foo/bar.rs`, never `foo.rs` next to a `foo/` directory. A module without submodules stays a single `foo.rs`; when it gains its first submodule, move it to `foo/mod.rs` (with `git mv`).
 - Commit messages are one lowercase line, past tense, no prefix, ending with the number of the issue the commit works on in parentheses (for example "added user timeline endpoint and frontend types (#42)"). In a tracking issue's flow that is the sub-issue, not the tracking issue or the PR. Merge commits are exempt. If no issue is known, ask the user for one; never omit it or use the PR number. The attribution trailer stays last in the body.

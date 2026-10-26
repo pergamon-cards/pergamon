@@ -1,20 +1,23 @@
 ---
 name: tracking-issue
-description: Plan and work through a GitHub tracking issue the user wrote, split into native sub-issues, one at a time on a single branch and PR, with one commit per sub-issue, a summary comment on the issue, and a stop for review after each. Use when the user asks to plan or set up a tracking issue (turn it into sub-issues), says "start <tracking issue>", "next", "proceed with R<n> (#<n>)", "approved", or asks to finish one before merging.
+description: Draft, plan and work through a GitHub tracking issue, split into native sub-issues, one at a time on a single branch and PR, with one commit per sub-issue, a summary comment on the issue, and a stop for review after each. Use whenever work splits into two or more logically related issues, including when you are the one proposing the split (draft the tracking issue if none exists), and when the user asks to plan or set up a tracking issue (turn it into sub-issues), says "start <tracking issue>", "next", "proceed with R<n> (#<n>)", "approved", or asks to finish one before merging.
 ---
 
 # Tracking issue
 
-A larger change is a **tracking issue** (written by the user) whose native sub-issues are the steps, done in order on **one branch** with **one draft PR** that closes them all. Each step is one commit, a comment on its issue, and then a **stop** for the user's review. The user drives the pace: never start the next sub-issue until they say so.
+A larger change is a **tracking issue** whose native sub-issues are the steps, done in order on **one branch** with **one draft PR** that closes them all. Each step is one commit, a comment on its issue, and then a **stop** for the user's review. The user drives the pace: never start the next sub-issue until they say so.
 
-Planning and implementing are separate calls. Planning creates only issues; it never creates a branch, a commit or a PR.
+Any work that splits into two or more logically related issues goes through this skill, never several standalone `issue` flows. If there is no tracking issue yet, start with [Draft](#draft).
+
+Drafting and planning create only issues; they never create a branch, a commit or a PR. Implementing is a separate call.
 
 Find the repo with `gh repo view --json nameWithOwner --jq .nameWithOwner`, called `O/R` below.
 
-The tracking issue's body is the user's. Never edit it without asking; add decisions and the branch name as comments.
+The tracking issue's body is the user's, including one drafted here and approved by them. Never edit it without asking; add decisions and the branch name as comments.
 
 ## Modes
 
+- **Draft** (the work has no tracking issue yet, for example after a plan in chat, or when an `issue` plan turns out to need several issues): see [Draft](#draft).
 - **Plan** ("plan #18", "set up #18"): see [Plan](#plan).
 - **Step** ("start #18", "next", "proceed with R4 (#12)"): see [Step](#step). Most calls are this.
 - **Approve** ("approved", "looks good"): see [Approve](#approve).
@@ -23,9 +26,22 @@ The tracking issue's body is the user's. Never edit it without asking; add decis
 
 "Next" means the previous step is approved: do [Approve](#approve) first, then the Step.
 
+## Draft
+
+Input: work that splits into related issues and has no tracking issue on GitHub yet.
+
+1. **Check** for an existing tracking issue or open issues that overlap the work (`gh issue list`). Name any that the work would close or supersede, and ask before reusing an existing tracking issue.
+2. **Write the body**, titled `Tracking: <summary>`, with these sections:
+   - **Goal**: the problem and the intended outcome;
+   - **Decisions**: what the user has already settled, and why;
+   - **Steps**: the proposed sub-issues in order, as `R<n> — <Area>: <summary>` with one or two lines each (they become real sub-issues in Plan);
+   - **Out of scope**, and **related issues** (`Closes #<n>` for ones it replaces).
+3. **Show the draft in chat and stop.** Create it only after the user approves: `gh issue create --title ... --body-file ...`. Apply their changes to the draft first.
+4. Once created, the body is the user's. Continue with [Plan](#plan) on the new issue (the decisions in the body count as settled).
+
 ## Plan
 
-Input: the tracking issue the user created on GitHub.
+Input: the tracking issue on GitHub (written by the user, or drafted with [Draft](#draft) and approved).
 
 1. **Read** the tracking issue and all its comments (`gh issue view <n> --json body,comments`), then the code it touches. Check whether it already has sub-issues.
 2. **Ask** about choices that belong to the user and are not settled (a backend change, a new dependency, removing behaviour). Record the decisions in a comment on the tracking issue.
@@ -53,7 +69,7 @@ Order the steps so that guardrails (lint, types) come first. Put a step that rem
 2. **Read** the sub-issue body and **all** its comments: `gh issue view <n> --json body,comments`. The user's comments answer the body's open questions and override it. Also read the tracking issue's comments if the sub-issue points to them.
 3. **Decide what is unclear.** If a choice belongs to the user and neither the issue nor its comments settle it, ask before implementing it. Otherwise make the choice and say so in the report.
 4. **Implement** only what the issue covers.
-   - Use the project skills where they fit (`add-endpoint`, `add-migration`, `add-frontend-page`, `add-loader-command`).
+   - Use the project skills where they fit.
    - Something found along the way that is out of scope becomes a new sub-issue (ask first), not a drive-by change. If a sub-issue needs rescoping, update the sub-issues and note it in a tracking issue comment.
    - A pure move or reformat goes in its own commit before the edits, so `git log --follow` and the review stay clean.
 5. **Check**, by the paths changed (see the `commit` skill and CLAUDE.md):
