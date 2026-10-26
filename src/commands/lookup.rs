@@ -215,3 +215,124 @@ async fn run(query: String, state: &State, ctx: serenity::all::Context, channel_
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn row(game: &str, title: &str, n: i64) -> CardRow {
+        CardRow {
+            game: game.into(),
+            title: title.into(),
+            card: json!({ "n": n }),
+        }
+    }
+
+    #[test]
+    fn parse_finds_no_queries() {
+        assert!(parse_inline_queries("").is_empty());
+        assert!(parse_inline_queries("just a message with [single] brackets").is_empty());
+    }
+
+    #[test]
+    fn parse_finds_one_query() {
+        assert_eq!(parse_inline_queries("have you seen [[Hedge Fund]]?"), ["Hedge Fund"]);
+    }
+
+    #[test]
+    fn parse_finds_two_queries_on_one_line() {
+        assert_eq!(parse_inline_queries("[[Hedge Fund]] or [[Sure Gamble]]"), ["Hedge Fund", "Sure Gamble"]);
+    }
+
+    #[test]
+    fn parse_trims_whitespace() {
+        assert_eq!(parse_inline_queries("[[  Hedge Fund \t]]"), ["Hedge Fund"]);
+    }
+
+    #[test]
+    fn parse_skips_empty_queries() {
+        assert!(parse_inline_queries("[[]]").is_empty());
+        assert!(parse_inline_queries("[[   ]]").is_empty());
+    }
+
+    #[test]
+    fn parse_handles_unbalanced_and_nested_brackets() {
+        assert!(parse_inline_queries("[[Hedge Fund]").is_empty());
+        assert!(parse_inline_queries("[Hedge Fund]]").is_empty());
+        assert_eq!(parse_inline_queries("[[[Hedge Fund]]]"), ["[Hedge Fund"]);
+        assert_eq!(parse_inline_queries("[[a [[b]]"), ["a [[b"]);
+    }
+
+    #[test]
+    fn parse_does_not_span_lines() {
+        assert!(parse_inline_queries("[[Hedge\nFund]]").is_empty());
+    }
+
+    #[test]
+    fn escape_like_escapes_wildcards_and_backslashes() {
+        assert_eq!(escape_like("plain"), "plain");
+        assert_eq!(escape_like("100%"), "100\\%");
+        assert_eq!(escape_like("a_b"), "a\\_b");
+        assert_eq!(escape_like("a\\b"), "a\\\\b");
+        assert_eq!(escape_like("%_\\"), "\\%\\_\\\\");
+        assert_eq!(escape_like("Déjà Vu"), "Déjà Vu");
+    }
+
+    #[test]
+    fn resolve_no_rows_is_not_found() {
+        assert_eq!(resolve(vec![]), LookupOutcome::NotFound);
+    }
+
+    #[test]
+    fn resolve_one_row_is_found() {
+        let r = row("netrunner", "Hedge Fund", 1);
+
+        assert_eq!(resolve(vec![r.clone()]), LookupOutcome::Found(r));
+    }
+
+    #[test]
+    fn resolve_reprints_are_found_as_the_first_printing() {
+        let first = row("netrunner", "Hedge Fund", 1);
+        let second = row("netrunner", "Hedge Fund", 2);
+
+        assert_eq!(resolve(vec![first.clone(), second]), LookupOutcome::Found(first));
+    }
+
+    #[test]
+    fn resolve_distinct_titles_are_ambiguous_in_order() {
+        let rows = vec![
+            row("netrunner", "Hedge Fund", 1),
+            row("netrunner", "Hedge Fund (alt)", 2),
+            row("netrunner", "Hedge Fund", 3),
+            row("netrunner", "Hedgehog", 4),
+        ];
+
+        assert_eq!(resolve(rows), LookupOutcome::Ambiguous(vec!["Hedge Fund".into(), "Hedge Fund (alt)".into(), "Hedgehog".into()]));
+    }
+
+    #[test]
+    fn disambiguation_message_has_a_button_per_title() {
+        let titles: Vec<String> = (0..3).map(|i| format!("Card {i}")).collect();
+
+        let value = serde_json::to_value(disambiguation_message(&titles)).unwrap();
+
+        let buttons: Vec<_> = value["components"].as_array().unwrap().iter().flat_map(|r| r["components"].as_array().unwrap()).collect();
+        assert_eq!(buttons.len(), 3);
+        for (button, title) in buttons.iter().zip(&titles) {
+            assert_eq!(button["label"], title.as_str());
+            assert_eq!(button["custom_id"], title.as_str());
+        }
+    }
+
+    #[test]
+    fn disambiguation_message_fills_action_rows_of_five() {
+        let titles: Vec<String> = (0..10).map(|i| format!("Card {i}")).collect();
+
+        let value = serde_json::to_value(disambiguation_message(&titles)).unwrap();
+
+        let rows: Vec<usize> = value["components"].as_array().unwrap().iter().map(|r| r["components"].as_array().unwrap().len()).collect();
+        assert_eq!(rows, [5, 5]);
+    }
+}

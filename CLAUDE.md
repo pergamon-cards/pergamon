@@ -18,11 +18,12 @@ cargo clippy
 Tests:
 
 ```bash
+cargo test                                    # Rust unit tests (#[cfg(test)] modules in py.rs, lookup.rs, settings.rs)
 pip install -r games/requirements-dev.txt     # once, ideally in a venv
 python -m pytest games                        # game script tests in games/tests/
 ```
 
-The pytest suite also renders every card in `data/netrunner/netrunner-cards-json` (skipped if it is not cloned). Cards that fail today because of bugs in `games/netrunner.py` are listed in `KNOWN_BAD` as strict `xfail`; when you fix one, pytest fails until you remove it from the list.
+The pytest suite also renders every card in `data/netrunner/netrunner-cards-json` (skipped if it is not cloned). Cards that fail today because of bugs in `games/netrunner.py` are listed in `KNOWN_BAD` as strict `xfail`; when you fix one, pytest fails until you remove it from the list. `render_embed` registers each script in `sys.modules` by name, so Rust tests that call it use a distinct module name each.
 
 Loading card data (Netrunner): clone https://github.com/Null-Signal-Games/netrunner-cards-json into `data/netrunner/netrunner-cards-json`, then run the loader **from `data/netrunner/`** (it resolves the JSON dir from cwd; needs `psycopg`):
 
