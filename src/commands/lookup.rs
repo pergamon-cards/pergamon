@@ -72,6 +72,12 @@ pub fn queries_for_message(author_is_bot: bool, content: &str) -> Vec<String> {
     if author_is_bot { Vec::new() } else { parse_inline_queries(content) }
 }
 
+/// The query without surrounding whitespace, or `None` when nothing is left to look up.
+pub fn normalize_query(query: &str) -> Option<&str> {
+    let query = query.trim();
+    if query.is_empty() { None } else { Some(query) }
+}
+
 /// Escapes `\`, `%` and `_` so user text matches literally in a `LIKE` pattern.
 pub fn escape_like(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -100,11 +106,11 @@ pub fn resolve(rows: Vec<CardRow>) -> LookupOutcome {
     }
 }
 
-/// Cards whose title starts with `query`, oldest first.
+/// Cards whose title starts with `query` (ignoring case), oldest first.
 pub async fn find_cards(pool: &PgPool, query: &str) -> anyhow::Result<Vec<CardRow>> {
     let pattern = format!("{}%", escape_like(query));
 
-    let rows = sqlx::query("SELECT game, title, card FROM cards WHERE title LIKE $1 ORDER BY id LIMIT 10")
+    let rows = sqlx::query("SELECT game, title, card FROM cards WHERE title ILIKE $1 ORDER BY id LIMIT 10")
         .bind(pattern)
         .fetch_all(pool)
         .await?;
@@ -140,6 +146,11 @@ pub async fn lookup_inline(state: &State, ctx: serenity::all::Context, msg: Mess
 }
 
 async fn run(query: String, state: &State, ctx: serenity::all::Context, channel_id: ChannelId) -> anyhow::Result<()> {
+    let Some(query) = normalize_query(&query).map(str::to_owned) else {
+        channel_id.send_message(&ctx.http, CreateMessage::new().content("Please give a card name to look up")).await?;
+        return Ok(());
+    };
+
     let entry = match resolve(find_cards(&state.database, &query).await?) {
         LookupOutcome::NotFound => None,
         LookupOutcome::Found(row) => Some(row),
@@ -304,6 +315,13 @@ mod tests {
     fn bot_messages_are_ignored() {
         assert!(queries_for_message(true, "[[Hedge Fund]]").is_empty());
         assert_eq!(queries_for_message(false, "[[Hedge Fund]]"), ["Hedge Fund"]);
+    }
+
+    #[test]
+    fn normalize_query_trims_and_rejects_empty() {
+        assert_eq!(normalize_query("  Hedge Fund \n"), Some("Hedge Fund"));
+        assert_eq!(normalize_query(""), None);
+        assert_eq!(normalize_query(" \t\n "), None);
     }
 
     #[test]
