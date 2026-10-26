@@ -72,10 +72,13 @@ The project recently migrated card scripts from Rune to Python:
 ## Conventions and workflow
 
 - Project skills live in `.claude/skills/`:
+  - `add-game`: researches card data sources and stops for the choice, then sets up a game (id, `games` migration, ingest adapter), fetches, loads and hands off to `add-embed-script`
+  - `add-embed-script`: writes `games/<id>.py` and its tests (golden cards, corpus test, `KNOWN_BAD`), stopping when the embed needs a property `PergamonEmbed` lacks
   - `add-migration`: adds a sqlx migration for a schema change and tests it on a throwaway database
   - `commit`: runs checks and commits in the repo's message style
   - `issue`: plans a single (non-tracking) issue for approval, then implements it on its own branch and draft PR, addresses feedback with fixup commits, and on approval squashes them and marks the PR ready
   - `tracking-issue`: drafts a tracking issue for approval when none exists, plans it into sub-issues, then works through them one at a time on one branch and PR (draft, plan, step, approve, fixups, before merging)
+  - `update-game-data`: refreshes a game's data (status, fetch, dry-run, then load after the user confirms the diff)
 - Work that splits into two or more logically related issues always goes through `tracking-issue`, never several standalone `issue` flows. If no tracking issue exists yet, draft one with its Draft mode; this applies when Claude is the one proposing the split too.
 - Before committing, run `cargo fmt`, `cargo clippy --all-targets` and `cargo test` for Rust changes. For changes to `games/*.py`, also run `python -m pytest games`, and `python -m pytest ingest` for changes to `ingest/`. Fix every clippy warning or error, and ask the user about any that need a decision, and `deno task build`, `deno task lint`, `deno task test` and `deno task fmt:check` for frontend changes. Don't run the `#[ignore]`d live tests.
 - Rust modules with submodules use the `mod.rs` layout: `foo/mod.rs` plus `foo/bar.rs`, never `foo.rs` next to a `foo/` directory. A module without submodules stays a single `foo.rs`; when it gains its first submodule, move it to `foo/mod.rs` (with `git mv`).
