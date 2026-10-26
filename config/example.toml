@@ -1,0 +1,11 @@
+# Copy to config/dev.toml (or config/<PERGAMON_RUN_ENV>.toml) and fill in real values.
+# Any key can be overridden by an environment variable, e.g. PERGAMON_TOKEN.
+token = "your-discord-bot-token"
+
+[database]
+host = "localhost"
+port = 5432
+username = "pergamon"
+password = "change-me"
+database = "pergamon"
+max_connections = 5

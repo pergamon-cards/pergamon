@@ -44,7 +44,7 @@ Note: README.md is stale — it mentions a sqlite DB and a `DISCORD_TOKEN` env v
 
 `src/settings.rs` loads `config/{PERGAMON_RUN_ENV}.toml` (default `dev`), then overlays env vars prefixed `PERGAMON_` (e.g. `PERGAMON_TOKEN`). Keys: `token` (Discord bot token) and a `[database]` table (`host`, `port`, `username`, `password`, `database`, `max_connections`). Settings live in a global `OnceCell`; call `Settings::global()` only after `Settings::new_global()` in `main`.
 
-`config/` contains secrets and is not currently gitignored — don't commit it.
+`config/*.toml` holds secrets and is gitignored; `config/example.toml` is the committed template with placeholder values.
 
 Logging uses `tracing` with `RUST_LOG`-style filtering (default `pergamon=debug`).
 
