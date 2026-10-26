@@ -53,11 +53,18 @@ pub enum LookupOutcome {
     Ambiguous(Vec<String>),
 }
 
-/// Returns the (trimmed, non-empty) text of every `[[...]]` in a message.
+/// The most `[[...]]` lookups answered for one message.
+pub const MAX_INLINE_QUERIES: usize = 5;
+
+/// Returns the (trimmed, non-empty) text of the first `MAX_INLINE_QUERIES` `[[...]]` in a message.
 pub fn parse_inline_queries(content: &str) -> Vec<String> {
     static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[\[(?<title_query>.+?)\]\]").expect("Error building regex"));
 
-    RE.captures_iter(content).map(|c| c["title_query"].trim().to_string()).filter(|q| !q.is_empty()).collect()
+    RE.captures_iter(content)
+        .map(|c| c["title_query"].trim().to_string())
+        .filter(|q| !q.is_empty())
+        .take(MAX_INLINE_QUERIES)
+        .collect()
 }
 
 /// The queries to look up for a message: none when a bot wrote it, so the bot never answers bots or itself.
@@ -254,6 +261,24 @@ mod tests {
     #[test]
     fn parse_trims_whitespace() {
         assert_eq!(parse_inline_queries("[[  Hedge Fund \t]]"), ["Hedge Fund"]);
+    }
+
+    #[test]
+    fn parse_stops_at_the_cap() {
+        let content: String = (1..=7).map(|i| format!("[[Card {i}]] ")).collect();
+
+        let queries = parse_inline_queries(&content);
+
+        assert_eq!(queries.len(), MAX_INLINE_QUERIES);
+        assert_eq!(queries.first().map(String::as_str), Some("Card 1"));
+        assert_eq!(queries.last().map(String::as_str), Some("Card 5"));
+    }
+
+    #[test]
+    fn parse_cap_ignores_empty_queries() {
+        let content = format!("[[]] {}", (1..=6).map(|i| format!("[[Card {i}]]")).collect::<String>());
+
+        assert_eq!(parse_inline_queries(&content).len(), MAX_INLINE_QUERIES);
     }
 
     #[test]
