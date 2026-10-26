@@ -163,11 +163,26 @@ pub async fn find_exact(pool: &PgPool, title: &str) -> anyhow::Result<Option<Car
     Ok(row.as_ref().map(CardRow::from_row).transpose()?)
 }
 
-/// The message with one button per title; a button's custom id is the title.
+/// Longest button label Discord accepts, in characters.
+const MAX_BUTTON_LABEL: usize = 80;
+
+/// `s` cut to at most `limit` characters, with `…` as the last one when it was cut.
+fn truncate_label(s: &str, limit: usize) -> String {
+    if s.chars().count() <= limit {
+        return s.to_string();
+    }
+    s.chars().take(limit - 1).chain(std::iter::once('\u{2026}')).collect()
+}
+
+/// The message with one button per title. A button's custom id is the title's index (a title can be longer
+/// than the 100 characters a custom id allows) and its label is the title, cut to fit.
 pub fn disambiguation_message(titles: &[String]) -> CreateMessage {
-    titles.iter().fold(CreateMessage::new().content("Please select the card you're looking for"), |msg, t| {
-        msg.button(CreateButton::new(t).label(t))
-    })
+    titles
+        .iter()
+        .enumerate()
+        .fold(CreateMessage::new().content("Please select the card you're looking for"), |msg, (i, t)| {
+            msg.button(CreateButton::new(i.to_string()).label(truncate_label(t, MAX_BUTTON_LABEL)))
+        })
 }
 
 pub async fn lookup_inline(state: &State, ctx: serenity::all::Context, msg: Message) {
@@ -213,7 +228,10 @@ async fn run(query: &str, state: &State, ctx: &serenity::all::Context, channel_i
             let _ = m.delete(ctx).await.inspect_err(|e| error!("Error deleting the disambiguation message: {e}"));
 
             match interaction {
-                Some(interaction) => find_exact(&state.database, &interaction.data.custom_id).await?,
+                Some(interaction) => match interaction.data.custom_id.parse::<usize>().ok().and_then(|i| titles.get(i)) {
+                    Some(title) => find_exact(&state.database, title).await?,
+                    None => None,
+                },
                 None => return Ok(Reply::Text("Timed out".into())),
             }
         }
@@ -384,8 +402,25 @@ mod tests {
         assert_eq!(buttons.len(), 3);
         for (button, title) in buttons.iter().zip(&titles) {
             assert_eq!(button["label"], title.as_str());
-            assert_eq!(button["custom_id"], title.as_str());
         }
+        let ids: Vec<_> = buttons.iter().map(|b| b["custom_id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["0", "1", "2"]);
+    }
+
+    #[test]
+    fn disambiguation_message_cuts_long_titles_to_fit_discord() {
+        let long = "x".repeat(150);
+        let titles = vec![long.clone(), "é".repeat(80), "é".repeat(81)];
+
+        let value = serde_json::to_value(disambiguation_message(&titles)).unwrap();
+
+        let buttons: Vec<_> = value["components"].as_array().unwrap().iter().flat_map(|r| r["components"].as_array().unwrap()).collect();
+        let labels: Vec<&str> = buttons.iter().map(|b| b["label"].as_str().unwrap()).collect();
+        assert_eq!(labels[0].chars().count(), 80);
+        assert!(labels[0].ends_with('\u{2026}'));
+        assert_eq!(labels[1], "é".repeat(80));
+        assert_eq!(labels[2].chars().count(), 80);
+        assert!(buttons.iter().all(|b| b["custom_id"].as_str().unwrap().len() <= 100));
     }
 
     #[test]
