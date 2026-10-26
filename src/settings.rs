@@ -53,7 +53,9 @@ impl Settings {
     pub fn new_global() -> Result<(), ConfigError> {
         let s = Settings::new()?;
 
-        Ok(SETTINGS.set(s).unwrap())
+        SETTINGS.set(s).unwrap();
+
+        Ok(())
     }
 
     pub fn global() -> &'static Self {
@@ -64,5 +66,87 @@ impl Settings {
                 panic!();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FILE: &str = r#"
+token = "file-token"
+
+[database]
+host = "localhost"
+port = 5432
+username = "postgres"
+password = "secret"
+database = "pergamon"
+max_connections = 5
+"#;
+
+    /// Writes `contents` to a unique temp file and returns its path without the extension.
+    fn config_file(name: &str, contents: &str) -> String {
+        let path = std::env::temp_dir().join(format!("pergamon-settings-{}-{name}", std::process::id()));
+        std::fs::write(path.with_extension("toml"), contents).unwrap();
+        path.to_str().unwrap().to_string()
+    }
+
+    fn env(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+
+    #[test]
+    fn loads_the_file() {
+        let path = config_file("loads", FILE);
+
+        let settings = Settings::from_sources(&path, HashMap::new()).unwrap();
+
+        assert_eq!(settings.token, "file-token");
+        assert_eq!(settings.database.host, "localhost");
+        assert_eq!(settings.database.port, 5432);
+        assert_eq!(settings.database.max_connections, 5);
+    }
+
+    #[test]
+    fn env_overrides_the_token() {
+        let path = config_file("env-token", FILE);
+
+        let settings = Settings::from_sources(&path, env(&[("PERGAMON_TOKEN", "env-token")])).unwrap();
+
+        assert_eq!(settings.token, "env-token");
+    }
+
+    #[test]
+    fn ignores_env_without_the_prefix() {
+        let path = config_file("env-prefix", FILE);
+
+        let settings = Settings::from_sources(&path, env(&[("TOKEN", "other")])).unwrap();
+
+        assert_eq!(settings.token, "file-token");
+    }
+
+    #[test]
+    fn nested_env_override_needs_a_separator() {
+        let path = config_file("env-nested", FILE);
+
+        // with the default (no) separator, the key does not reach [database]
+        let settings = Settings::from_sources(&path, env(&[("PERGAMON_DATABASE__HOST", "db.example.com")])).unwrap();
+
+        assert_eq!(settings.database.host, "localhost");
+    }
+
+    #[test]
+    fn missing_required_key_is_an_error() {
+        let path = config_file("missing-key", &FILE.replace("token = \"file-token\"", ""));
+
+        let err = Settings::from_sources(&path, HashMap::new()).unwrap_err();
+
+        assert!(err.to_string().contains("token"), "{err}");
+    }
+
+    #[test]
+    fn missing_file_is_an_error() {
+        assert!(Settings::from_sources("/nonexistent/pergamon", HashMap::new()).is_err());
     }
 }

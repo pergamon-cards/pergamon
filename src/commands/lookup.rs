@@ -16,7 +16,10 @@ use sqlx::{PgPool, Row};
 
 use tracing::{error, info};
 
-use crate::{State, py::{get_embed, validate_embed}, /*scripting*/};
+use crate::{
+    State,
+    py::{get_embed, validate_embed}, /*scripting*/
+};
 
 #[poise::command(prefix_command, slash_command)]
 pub async fn lookup(ctx: poise::Context<'_, State, anyhow::Error>, title: String) -> anyhow::Result<()> {
@@ -54,10 +57,7 @@ pub enum LookupOutcome {
 pub fn parse_inline_queries(content: &str) -> Vec<String> {
     static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[\[(?<title_query>.+?)\]\]").expect("Error building regex"));
 
-    RE.captures_iter(content)
-        .map(|c| c["title_query"].trim().to_string())
-        .filter(|q| !q.is_empty())
-        .collect()
+    RE.captures_iter(content).map(|c| c["title_query"].trim().to_string()).filter(|q| !q.is_empty()).collect()
 }
 
 /// Escapes `\`, `%` and `_` so user text matches literally in a `LIKE` pattern.
@@ -112,10 +112,9 @@ pub async fn find_exact(pool: &PgPool, title: &str) -> anyhow::Result<Option<Car
 
 /// The message with one button per title; a button's custom id is the title.
 pub fn disambiguation_message(titles: &[String]) -> CreateMessage {
-    titles.iter().fold(
-        CreateMessage::new().content("Please select the card you're looking for"),
-        |msg, t| msg.button(CreateButton::new(t).label(t)),
-    )
+    titles.iter().fold(CreateMessage::new().content("Please select the card you're looking for"), |msg, t| {
+        msg.button(CreateButton::new(t).label(t))
+    })
 }
 
 pub async fn lookup_inline(state: &State, ctx: serenity::all::Context, msg: Message) {
@@ -159,62 +158,181 @@ async fn run(query: String, state: &State, ctx: serenity::all::Context, channel_
         println!("{embed:?}");
         // create discord message with embed and send
         let builder = CreateMessage::new().embed(embed);
-        let _msg = channel_id.send_message(&ctx.http, builder)
-            .await
-            .inspect_err(|e| error!("Error sending message to Discord: {e}"))?;
+        let _msg = channel_id.send_message(&ctx.http, builder).await.inspect_err(|e| error!("Error sending message to Discord: {e}"))?;
 
-//         let card = row.get::<String, _>("card"); // get json data as string (for rune reasons)
-//         let game = row.get::<String, _>("game");
-// 
-//         // build rune vm
-//         let vm = Vm::new(state.runtime.clone(), state.unit.clone());
-// 
-//         // create execution struct, i.e. rune function call
-//         let execution = vm.try_clone().unwrap().send_execute([&game, "embed"], (card,))?;
-// 
-//         // run in separate thread
-//         let _ = tokio::spawn(async move {
-//             // run rune function
-//             let output = match execution.async_complete().await {
-//                 VmResult::Ok(out) => out,
-//                 VmResult::Err(e) => {
-//                     error!("Error running rune function: {e}");
-//                     return;
-//                 }
-//             };
-// 
-//             // convert rune value into module struct
-//             let output: rune::runtime::Object = match rune::from_value(output) {
-//                 Ok(out) => out,
-//                 Err(e) => {
-//                     error!("Error converting from rune value to rune object: {e}");
-//                     return;
-//                 }
-//             };
-// 
-//             // convert module struct into serenity discord embed
-//             let embed = match scripting::try_from_rune_object_to_embed(output) {
-//                 Ok(em) => em,
-//                 Err(e) => {
-//                     error!("Error creating embed from script: {e}");
-//                     return;
-//                 }
-//             };
-// 
-//             // create discord message with embed and send
-//             let builder = CreateMessage::new().embed(embed);
-//             let _msg = match channel_id.send_message(&ctx.http, builder).await {
-//                 Ok(msg) => msg,
-//                 Err(e) => {
-//                     error!("Error sending message to Discord: {e}");
-//                     return;
-//                 }
-//             };
-//         });
+    //         let card = row.get::<String, _>("card"); // get json data as string (for rune reasons)
+    //         let game = row.get::<String, _>("game");
+    //
+    //         // build rune vm
+    //         let vm = Vm::new(state.runtime.clone(), state.unit.clone());
+    //
+    //         // create execution struct, i.e. rune function call
+    //         let execution = vm.try_clone().unwrap().send_execute([&game, "embed"], (card,))?;
+    //
+    //         // run in separate thread
+    //         let _ = tokio::spawn(async move {
+    //             // run rune function
+    //             let output = match execution.async_complete().await {
+    //                 VmResult::Ok(out) => out,
+    //                 VmResult::Err(e) => {
+    //                     error!("Error running rune function: {e}");
+    //                     return;
+    //                 }
+    //             };
+    //
+    //             // convert rune value into module struct
+    //             let output: rune::runtime::Object = match rune::from_value(output) {
+    //                 Ok(out) => out,
+    //                 Err(e) => {
+    //                     error!("Error converting from rune value to rune object: {e}");
+    //                     return;
+    //                 }
+    //             };
+    //
+    //             // convert module struct into serenity discord embed
+    //             let embed = match scripting::try_from_rune_object_to_embed(output) {
+    //                 Ok(em) => em,
+    //                 Err(e) => {
+    //                     error!("Error creating embed from script: {e}");
+    //                     return;
+    //                 }
+    //             };
+    //
+    //             // create discord message with embed and send
+    //             let builder = CreateMessage::new().embed(embed);
+    //             let _msg = match channel_id.send_message(&ctx.http, builder).await {
+    //                 Ok(msg) => msg,
+    //                 Err(e) => {
+    //                     error!("Error sending message to Discord: {e}");
+    //                     return;
+    //                 }
+    //             };
+    //         });
     } else {
-        let builder = CreateMessage::new().content(&format!("{query} not found"));
+        let builder = CreateMessage::new().content(format!("{query} not found"));
         let _msg = channel_id.send_message(&ctx.http, builder).await?;
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn row(game: &str, title: &str, n: i64) -> CardRow {
+        CardRow {
+            game: game.into(),
+            title: title.into(),
+            card: json!({ "n": n }),
+        }
+    }
+
+    #[test]
+    fn parse_finds_no_queries() {
+        assert!(parse_inline_queries("").is_empty());
+        assert!(parse_inline_queries("just a message with [single] brackets").is_empty());
+    }
+
+    #[test]
+    fn parse_finds_one_query() {
+        assert_eq!(parse_inline_queries("have you seen [[Hedge Fund]]?"), ["Hedge Fund"]);
+    }
+
+    #[test]
+    fn parse_finds_two_queries_on_one_line() {
+        assert_eq!(parse_inline_queries("[[Hedge Fund]] or [[Sure Gamble]]"), ["Hedge Fund", "Sure Gamble"]);
+    }
+
+    #[test]
+    fn parse_trims_whitespace() {
+        assert_eq!(parse_inline_queries("[[  Hedge Fund \t]]"), ["Hedge Fund"]);
+    }
+
+    #[test]
+    fn parse_skips_empty_queries() {
+        assert!(parse_inline_queries("[[]]").is_empty());
+        assert!(parse_inline_queries("[[   ]]").is_empty());
+    }
+
+    #[test]
+    fn parse_handles_unbalanced_and_nested_brackets() {
+        assert!(parse_inline_queries("[[Hedge Fund]").is_empty());
+        assert!(parse_inline_queries("[Hedge Fund]]").is_empty());
+        assert_eq!(parse_inline_queries("[[[Hedge Fund]]]"), ["[Hedge Fund"]);
+        assert_eq!(parse_inline_queries("[[a [[b]]"), ["a [[b"]);
+    }
+
+    #[test]
+    fn parse_does_not_span_lines() {
+        assert!(parse_inline_queries("[[Hedge\nFund]]").is_empty());
+    }
+
+    #[test]
+    fn escape_like_escapes_wildcards_and_backslashes() {
+        assert_eq!(escape_like("plain"), "plain");
+        assert_eq!(escape_like("100%"), "100\\%");
+        assert_eq!(escape_like("a_b"), "a\\_b");
+        assert_eq!(escape_like("a\\b"), "a\\\\b");
+        assert_eq!(escape_like("%_\\"), "\\%\\_\\\\");
+        assert_eq!(escape_like("Déjà Vu"), "Déjà Vu");
+    }
+
+    #[test]
+    fn resolve_no_rows_is_not_found() {
+        assert_eq!(resolve(vec![]), LookupOutcome::NotFound);
+    }
+
+    #[test]
+    fn resolve_one_row_is_found() {
+        let r = row("netrunner", "Hedge Fund", 1);
+
+        assert_eq!(resolve(vec![r.clone()]), LookupOutcome::Found(r));
+    }
+
+    #[test]
+    fn resolve_reprints_are_found_as_the_first_printing() {
+        let first = row("netrunner", "Hedge Fund", 1);
+        let second = row("netrunner", "Hedge Fund", 2);
+
+        assert_eq!(resolve(vec![first.clone(), second]), LookupOutcome::Found(first));
+    }
+
+    #[test]
+    fn resolve_distinct_titles_are_ambiguous_in_order() {
+        let rows = vec![
+            row("netrunner", "Hedge Fund", 1),
+            row("netrunner", "Hedge Fund (alt)", 2),
+            row("netrunner", "Hedge Fund", 3),
+            row("netrunner", "Hedgehog", 4),
+        ];
+
+        assert_eq!(resolve(rows), LookupOutcome::Ambiguous(vec!["Hedge Fund".into(), "Hedge Fund (alt)".into(), "Hedgehog".into()]));
+    }
+
+    #[test]
+    fn disambiguation_message_has_a_button_per_title() {
+        let titles: Vec<String> = (0..3).map(|i| format!("Card {i}")).collect();
+
+        let value = serde_json::to_value(disambiguation_message(&titles)).unwrap();
+
+        let buttons: Vec<_> = value["components"].as_array().unwrap().iter().flat_map(|r| r["components"].as_array().unwrap()).collect();
+        assert_eq!(buttons.len(), 3);
+        for (button, title) in buttons.iter().zip(&titles) {
+            assert_eq!(button["label"], title.as_str());
+            assert_eq!(button["custom_id"], title.as_str());
+        }
+    }
+
+    #[test]
+    fn disambiguation_message_fills_action_rows_of_five() {
+        let titles: Vec<String> = (0..10).map(|i| format!("Card {i}")).collect();
+
+        let value = serde_json::to_value(disambiguation_message(&titles)).unwrap();
+
+        let rows: Vec<usize> = value["components"].as_array().unwrap().iter().map(|r| r["components"].as_array().unwrap().len()).collect();
+        assert_eq!(rows, [5, 5]);
+    }
 }

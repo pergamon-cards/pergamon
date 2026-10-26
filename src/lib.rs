@@ -72,7 +72,7 @@ pub async fn run() -> Result<()> {
         })
         .build();
 
-    let mut client = serenity::Client::builder(&discord_token, intents).framework(framework).await?;
+    let mut client = serenity::Client::builder(discord_token, intents).framework(framework).await?;
 
     let shard_manager = client.shard_manager.clone();
 
