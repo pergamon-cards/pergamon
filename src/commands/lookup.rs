@@ -60,6 +60,11 @@ pub fn parse_inline_queries(content: &str) -> Vec<String> {
     RE.captures_iter(content).map(|c| c["title_query"].trim().to_string()).filter(|q| !q.is_empty()).collect()
 }
 
+/// The queries to look up for a message: none when a bot wrote it, so the bot never answers bots or itself.
+pub fn queries_for_message(author_is_bot: bool, content: &str) -> Vec<String> {
+    if author_is_bot { Vec::new() } else { parse_inline_queries(content) }
+}
+
 /// Escapes `\`, `%` and `_` so user text matches literally in a `LIKE` pattern.
 pub fn escape_like(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -118,7 +123,7 @@ pub fn disambiguation_message(titles: &[String]) -> CreateMessage {
 }
 
 pub async fn lookup_inline(state: &State, ctx: serenity::all::Context, msg: Message) {
-    for query in parse_inline_queries(&msg.content) {
+    for query in queries_for_message(msg.author.bot, &msg.content) {
         info!("Captured card lookup for {query} from message");
 
         if let Err(e) = run(query, state, ctx.clone(), msg.channel_id).await {
@@ -268,6 +273,12 @@ mod tests {
     #[test]
     fn parse_does_not_span_lines() {
         assert!(parse_inline_queries("[[Hedge\nFund]]").is_empty());
+    }
+
+    #[test]
+    fn bot_messages_are_ignored() {
+        assert!(queries_for_message(true, "[[Hedge Fund]]").is_empty());
+        assert_eq!(queries_for_message(false, "[[Hedge Fund]]"), ["Hedge Fund"]);
     }
 
     #[test]
