@@ -1,6 +1,6 @@
 ---
 name: issue
-description: Plan and implement a single (non-tracking) GitHub issue on its own branch and PR, with a plan for approval first, one commit, a stop for review with fixup commits for feedback, then squash and mark the PR ready. Use when the user asks to plan or work on an issue ("plan #42", "start #42", "do #42"), says "approved", or asks to finish one before merging. For a tracking issue with sub-issues use `tracking-issue` instead.
+description: Plan and implement a single (non-tracking) GitHub issue on its own branch and PR, with a plan for approval first, one commit, a stop for review with fixup commits for feedback, then squash and mark the PR ready. Use when the user asks to plan or work on an issue ("plan #42", "start #42", "do #42"), says "approved", or asks to finish one before merging. For a tracking issue with sub-issues, or work that splits into several related issues, use `tracking-issue` instead.
 ---
 
 # Issue
@@ -26,10 +26,10 @@ If the user says "start #42" with no plan yet, do [Plan](#plan) first and stop f
 
 Input: an issue the user created on GitHub. Planning creates only a comment; it never creates a branch, a commit or a PR.
 
-1. **Read** the issue and all its comments (`gh issue view <n> --json body,comments,labels`), then the code it touches. If the issue turns out to have sub-issues (`gh api repos/O/R/issues/<n>/sub_issues`), stop and use `tracking-issue` instead.
+1. **Read** the issue and all its comments (`gh issue view <n> --json body,comments,labels`), then the code it touches. If the issue turns out to have sub-issues (`gh api repos/O/R/issues/<n>/sub_issues`), stop and use `tracking-issue` instead. If the work needs more than one issue or commit that belong together, stop and say so, then use `tracking-issue` ([Draft](../tracking-issue/SKILL.md#draft)) rather than planning it here or splitting it into several standalone issues.
 2. **Ask** about choices that belong to the user and are not settled (a backend change, a new dependency, removing behaviour, a schema change).
 3. **Write the plan** as a comment on the issue (`gh issue comment <n> --body-file ...`) and show it in chat. It has these sections:
-   - **Approach**: what changes and where, with `path:line` references, naming the project skills that will be used (`add-endpoint`, `add-migration`, `add-frontend-page`, `add-loader-command`);
+   - **Approach**: what changes and where, with `path:line` references, naming the project skills that will be used;
    - **Decisions**: the choices made and why, with the alternatives left out;
    - **Out of scope**: what is deliberately not touched; anything found along the way becomes a new issue (ask first), not a drive-by change;
    - **Verification**: the checks and the behaviour to confirm (see [Implement](#implement), step 3);
