@@ -30,42 +30,42 @@ pub struct PergamonEmbedFooter {
 impl From<PergamonEmbed> for CreateEmbed {
     fn from(pe: PergamonEmbed) -> Self {
         let mut ce = CreateEmbed::new();
-        
+
         ce = match pe.color {
             Some(x) => ce.color(x),
             None => ce,
         };
-        
+
         ce = match pe.description {
             Some(x) => ce.description(x),
             None => ce,
         };
-        
+
         ce = match pe.footer {
             Some(x) => ce.footer(x.into()),
             None => ce,
         };
-        
+
         ce = match pe.image {
             Some(x) => ce.image(x),
             None => ce,
         };
-        
+
         ce = match pe.thumbnail {
             Some(x) => ce.thumbnail(x),
             None => ce,
         };
-        
+
         ce = match pe.title {
             Some(x) => ce.title(x),
             None => ce,
         };
-        
+
         ce = match pe.url {
             Some(x) => ce.url(x),
             None => ce,
         };
-        
+
         ce
     }
 }
@@ -73,12 +73,12 @@ impl From<PergamonEmbed> for CreateEmbed {
 impl From<PergamonEmbedFooter> for CreateEmbedFooter {
     fn from(pef: PergamonEmbedFooter) -> Self {
         let mut cef = CreateEmbedFooter::new(pef.text);
-        
+
         cef = match pef.icon_url {
             Some(x) => cef.icon_url(x),
             None => cef,
         };
-        
+
         cef
     }
 }
