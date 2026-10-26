@@ -7,8 +7,8 @@ use regex::Regex;
 // use rune::alloc::prelude::TryClone;
 // use rune::runtime::{Vm, VmResult};
 
-use serenity::all::ChannelId;
-use serenity::builder::{CreateButton, CreateMessage};
+use serenity::all::{ChannelId, UserId};
+use serenity::builder::{CreateButton, CreateEmbed, CreateMessage};
 use serenity::model::channel::Message;
 
 use sqlx::postgres::PgRow;
@@ -23,7 +23,42 @@ use crate::{
 
 #[poise::command(prefix_command, slash_command)]
 pub async fn lookup(ctx: poise::Context<'_, State, anyhow::Error>, title: String) -> anyhow::Result<()> {
-    run(title, ctx.data(), ctx.serenity_context().clone(), ctx.channel_id()).await
+    // a lookup can wait on a button click or a slow render, longer than Discord's 3 seconds to answer
+    ctx.defer().await?;
+
+    match run(&title, ctx.data(), ctx.serenity_context(), ctx.channel_id(), ctx.author().id).await {
+        Ok(reply) => {
+            ctx.send(reply.into_poise()).await?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = ctx.say("Something went wrong looking that card up").await;
+            Err(e)
+        }
+    }
+}
+
+/// What a lookup answers with. The caller sends it: as the response to a slash command, or as a message in the channel.
+#[derive(Debug)]
+pub enum Reply {
+    Embed(Box<CreateEmbed>),
+    Text(String),
+}
+
+impl Reply {
+    fn into_message(self) -> CreateMessage {
+        match self {
+            Reply::Embed(embed) => CreateMessage::new().embed(*embed),
+            Reply::Text(text) => CreateMessage::new().content(text),
+        }
+    }
+
+    fn into_poise(self) -> poise::CreateReply {
+        match self {
+            Reply::Embed(embed) => poise::CreateReply::default().embed(*embed),
+            Reply::Text(text) => poise::CreateReply::default().content(text),
+        }
+    }
 }
 
 /// A card row as stored in the `cards` table.
@@ -139,104 +174,52 @@ pub async fn lookup_inline(state: &State, ctx: serenity::all::Context, msg: Mess
     for query in queries_for_message(msg.author.bot, &msg.content) {
         info!("Captured card lookup for {query} from message");
 
-        if let Err(e) = run(query, state, ctx.clone(), msg.channel_id).await {
-            error!("{e}");
+        match run(&query, state, &ctx, msg.channel_id, msg.author.id).await {
+            Ok(reply) => {
+                let _ = msg
+                    .channel_id
+                    .send_message(&ctx.http, reply.into_message())
+                    .await
+                    .inspect_err(|e| error!("Error sending message to Discord: {e}"));
+            }
+            Err(e) => error!("{e}"),
         }
     }
 }
 
-async fn run(query: String, state: &State, ctx: serenity::all::Context, channel_id: ChannelId) -> anyhow::Result<()> {
-    let Some(query) = normalize_query(&query).map(str::to_owned) else {
-        channel_id.send_message(&ctx.http, CreateMessage::new().content("Please give a card name to look up")).await?;
-        return Ok(());
+/// Looks up `query`, asking `requester` to pick when several titles match, and returns what to answer with.
+async fn run(query: &str, state: &State, ctx: &serenity::all::Context, channel_id: ChannelId, _requester: UserId) -> anyhow::Result<Reply> {
+    let Some(query) = normalize_query(query) else {
+        return Ok(Reply::Text("Please give a card name to look up".into()));
     };
 
-    let entry = match resolve(find_cards(&state.database, &query).await?) {
+    let entry = match resolve(find_cards(&state.database, query).await?) {
         LookupOutcome::NotFound => None,
         LookupOutcome::Found(row) => Some(row),
         LookupOutcome::Ambiguous(titles) => {
-            let m = channel_id.send_message(&ctx, disambiguation_message(&titles)).await?;
+            let m = channel_id.send_message(ctx, disambiguation_message(&titles)).await?;
 
-            let interaction = match m.await_component_interaction(&ctx.shard).timeout(Duration::from_secs(60 * 3)).await {
-                Some(x) => Some(x),
-                None => {
-                    let _ = m.reply(&ctx, "Timed out").await;
-                    None
-                }
-            };
+            let interaction = m.await_component_interaction(&ctx.shard).timeout(Duration::from_secs(60 * 3)).await;
 
-            m.delete(&ctx).await.unwrap();
+            m.delete(ctx).await.unwrap();
 
             match interaction {
                 Some(interaction) => find_exact(&state.database, &interaction.data.custom_id).await?,
-                None => return Ok(()),
+                None => return Ok(Reply::Text("Timed out".into())),
             }
         }
     };
 
-    if let Some(row) = entry {
-        let embed = get_embed(Path::new("games"), &row.game, &row.card)?;
-        validate_embed(&embed)?;
-        let embed = embed.into();
-        println!("{embed:?}");
-        // create discord message with embed and send
-        let builder = CreateMessage::new().embed(embed);
-        let _msg = channel_id.send_message(&ctx.http, builder).await.inspect_err(|e| error!("Error sending message to Discord: {e}"))?;
-
-    //         let card = row.get::<String, _>("card"); // get json data as string (for rune reasons)
-    //         let game = row.get::<String, _>("game");
-    //
-    //         // build rune vm
-    //         let vm = Vm::new(state.runtime.clone(), state.unit.clone());
-    //
-    //         // create execution struct, i.e. rune function call
-    //         let execution = vm.try_clone().unwrap().send_execute([&game, "embed"], (card,))?;
-    //
-    //         // run in separate thread
-    //         let _ = tokio::spawn(async move {
-    //             // run rune function
-    //             let output = match execution.async_complete().await {
-    //                 VmResult::Ok(out) => out,
-    //                 VmResult::Err(e) => {
-    //                     error!("Error running rune function: {e}");
-    //                     return;
-    //                 }
-    //             };
-    //
-    //             // convert rune value into module struct
-    //             let output: rune::runtime::Object = match rune::from_value(output) {
-    //                 Ok(out) => out,
-    //                 Err(e) => {
-    //                     error!("Error converting from rune value to rune object: {e}");
-    //                     return;
-    //                 }
-    //             };
-    //
-    //             // convert module struct into serenity discord embed
-    //             let embed = match scripting::try_from_rune_object_to_embed(output) {
-    //                 Ok(em) => em,
-    //                 Err(e) => {
-    //                     error!("Error creating embed from script: {e}");
-    //                     return;
-    //                 }
-    //             };
-    //
-    //             // create discord message with embed and send
-    //             let builder = CreateMessage::new().embed(embed);
-    //             let _msg = match channel_id.send_message(&ctx.http, builder).await {
-    //                 Ok(msg) => msg,
-    //                 Err(e) => {
-    //                     error!("Error sending message to Discord: {e}");
-    //                     return;
-    //                 }
-    //             };
-    //         });
-    } else {
-        let builder = CreateMessage::new().content(format!("{query} not found"));
-        let _msg = channel_id.send_message(&ctx.http, builder).await?;
+    match entry {
+        Some(row) => {
+            let embed = get_embed(Path::new("games"), &row.game, &row.card)?;
+            validate_embed(&embed)?;
+            let embed = embed.into();
+            println!("{embed:?}");
+            Ok(Reply::Embed(Box::new(embed)))
+        }
+        None => Ok(Reply::Text(format!("{query} not found"))),
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -322,6 +305,22 @@ mod tests {
         assert_eq!(normalize_query("  Hedge Fund \n"), Some("Hedge Fund"));
         assert_eq!(normalize_query(""), None);
         assert_eq!(normalize_query(" \t\n "), None);
+    }
+
+    #[test]
+    fn text_reply_becomes_message_content() {
+        let value = serde_json::to_value(Reply::Text("Hedge Fund not found".into()).into_message()).unwrap();
+
+        assert_eq!(value["content"], "Hedge Fund not found");
+        assert!(value["embeds"].as_array().is_none_or(|e| e.is_empty()));
+    }
+
+    #[test]
+    fn embed_reply_becomes_one_embed() {
+        let value = serde_json::to_value(Reply::Embed(Box::new(CreateEmbed::new().title("Hedge Fund"))).into_message()).unwrap();
+
+        assert_eq!(value["embeds"][0]["title"], "Hedge Fund");
+        assert!(value["content"].is_null());
     }
 
     #[test]
