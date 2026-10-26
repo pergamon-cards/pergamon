@@ -8,7 +8,7 @@ use regex::Regex;
 // use rune::runtime::{Vm, VmResult};
 
 use serenity::all::{ChannelId, UserId};
-use serenity::builder::{CreateButton, CreateEmbed, CreateInteractionResponse, CreateMessage};
+use serenity::builder::{CreateAllowedMentions, CreateButton, CreateEmbed, CreateInteractionResponse, CreateMessage};
 use serenity::model::channel::Message;
 
 use sqlx::postgres::PgRow;
@@ -45,12 +45,19 @@ pub enum Reply {
     Text(String),
 }
 
+/// Allowed mentions that ping nobody. Every message the bot sends uses it, because replies echo what users typed
+/// (`[[@everyone]]` -> "@everyone not found").
+fn no_mentions() -> CreateAllowedMentions {
+    CreateAllowedMentions::new()
+}
+
 impl Reply {
     fn into_message(self) -> CreateMessage {
         match self {
             Reply::Embed(embed) => CreateMessage::new().embed(*embed),
             Reply::Text(text) => CreateMessage::new().content(text),
         }
+        .allowed_mentions(no_mentions())
     }
 
     fn into_poise(self) -> poise::CreateReply {
@@ -58,6 +65,7 @@ impl Reply {
             Reply::Embed(embed) => poise::CreateReply::default().embed(*embed),
             Reply::Text(text) => poise::CreateReply::default().content(text),
         }
+        .allowed_mentions(no_mentions())
     }
 }
 
@@ -183,6 +191,7 @@ pub fn disambiguation_message(titles: &[String]) -> CreateMessage {
         .fold(CreateMessage::new().content("Please select the card you're looking for"), |msg, (i, t)| {
             msg.button(CreateButton::new(i.to_string()).label(truncate_label(t, MAX_BUTTON_LABEL)))
         })
+        .allowed_mentions(no_mentions())
 }
 
 pub async fn lookup_inline(state: &State, ctx: serenity::all::Context, msg: Message) {
@@ -340,6 +349,25 @@ mod tests {
 
         assert_eq!(value["content"], "Hedge Fund not found");
         assert!(value["embeds"].as_array().is_none_or(|e| e.is_empty()));
+    }
+
+    #[test]
+    fn replies_ping_nobody() {
+        for reply in [
+            Reply::Text("@everyone not found".into()),
+            Reply::Embed(Box::new(CreateEmbed::new())),
+        ] {
+            let value = serde_json::to_value(reply.into_message()).unwrap();
+
+            assert_eq!(value["allowed_mentions"]["parse"], json!([]));
+        }
+    }
+
+    #[test]
+    fn disambiguation_message_pings_nobody() {
+        let value = serde_json::to_value(disambiguation_message(&["@everyone".to_string()])).unwrap();
+
+        assert_eq!(value["allowed_mentions"]["parse"], json!([]));
     }
 
     #[test]
